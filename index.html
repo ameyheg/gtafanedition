@@ -3204,15 +3204,31 @@
       }
 
       setupMobileControls() {
-        const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
         const mobileControls = document.getElementById('mobile-controls');
         const mobileHint = document.getElementById('mobile-hint-text');
 
-        if (isTouch) {
+        const enableMobileControls = () => {
           if (mobileControls) mobileControls.classList.add('visible');
           if (mobileHint) mobileHint.style.display = 'block';
           document.body.classList.add('is-touch-device');
+        };
+
+        const checkTouchOrMobile = () => {
+          return ('ontouchstart' in window) ||
+                 (navigator.maxTouchPoints > 0) ||
+                 (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+                 (window.innerWidth <= 1024);
+        };
+
+        if (checkTouchOrMobile()) {
+          enableMobileControls();
         }
+
+        // Failsafe: activate immediately upon first touch or resize
+        window.addEventListener('touchstart', enableMobileControls, { once: true });
+        window.addEventListener('resize', () => {
+          if (window.innerWidth <= 1024) enableMobileControls();
+        });
 
         // 1. ANALOG THUMB JOYSTICK (Bottom-Left)
         const joyZone = document.getElementById('joystick-zone');
@@ -3291,6 +3307,30 @@
           };
           joyZone.addEventListener('touchend', endJoystick);
           joyZone.addEventListener('touchcancel', endJoystick);
+
+          // Mouse fallback for joystick dragging
+          let isMouseJoy = false;
+          joyZone.addEventListener('mousedown', (e) => {
+            isMouseJoy = true;
+            const rect = joyZone.getBoundingClientRect();
+            joyBaseX = rect.left + rect.width / 2;
+            joyBaseY = rect.top + rect.height / 2;
+            updateJoystick(e.clientX, e.clientY);
+          });
+          window.addEventListener('mousemove', (e) => {
+            if (isMouseJoy) updateJoystick(e.clientX, e.clientY);
+          });
+          window.addEventListener('mouseup', () => {
+            if (isMouseJoy) {
+              isMouseJoy = false;
+              if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
+              this.keys.w = false;
+              this.keys.s = false;
+              this.keys.a = false;
+              this.keys.d = false;
+              this.keys.shift = false;
+            }
+          });
         }
 
         // 2. SWIPE-TO-LOOK CAMERA ZONE (Right Half Screen)
@@ -3336,14 +3376,35 @@
           };
           lookZone.addEventListener('touchend', endLook);
           lookZone.addEventListener('touchcancel', endLook);
+
+          // Mouse look fallback when mobile gamepad is visible without pointerlock
+          let isMouseLooking = false;
+          lookZone.addEventListener('mousedown', (e) => {
+            if (document.pointerLockElement === document.body) return;
+            isMouseLooking = true;
+            lookLastX = e.clientX;
+            lookLastY = e.clientY;
+          });
+          window.addEventListener('mousemove', (e) => {
+            if (isMouseLooking && document.pointerLockElement !== document.body) {
+              const dx = e.clientX - lookLastX;
+              const dy = e.clientY - lookLastY;
+              lookLastX = e.clientX;
+              lookLastY = e.clientY;
+              this.mouseYaw -= dx * 0.0055;
+              this.mousePitch -= dy * 0.0045;
+              this.mousePitch = Math.max(-0.6, Math.min(0.8, this.mousePitch));
+            }
+          });
+          window.addEventListener('mouseup', () => { isMouseLooking = false; });
         }
 
         // 3. ACTION BUTTONS CLUSTER
         const btnFire = document.getElementById('btn-m-fire');
         let fireInterval = null;
         if (btnFire) {
-          btnFire.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+          const startFire = (e) => {
+            if (e) e.preventDefault();
             if (this.state !== 'PLAYING') return;
             this.isFiring = true;
             this.handleWeaponFire();
@@ -3351,21 +3412,23 @@
             fireInterval = setInterval(() => {
               if (this.isFiring && this.state === 'PLAYING') this.handleWeaponFire();
             }, 140);
-          }, { passive: false });
-
+          };
           const stopFire = (e) => {
-            e.preventDefault();
+            if (e) e.preventDefault();
             this.isFiring = false;
             clearInterval(fireInterval);
           };
+          btnFire.addEventListener('touchstart', startFire, { passive: false });
           btnFire.addEventListener('touchend', stopFire);
           btnFire.addEventListener('touchcancel', stopFire);
+          btnFire.addEventListener('mousedown', startFire);
+          btnFire.addEventListener('mouseup', stopFire);
         }
 
         const btnAim = document.getElementById('btn-m-aim');
         if (btnAim) {
-          btnAim.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+          const toggleAim = (e) => {
+            if (e) e.preventDefault();
             if (this.state !== 'PLAYING') return;
             this.isAiming = !this.isAiming;
             const crosshair = document.getElementById('crosshair');
@@ -3376,62 +3439,72 @@
               if (crosshair) crosshair.classList.remove('aiming');
               btnAim.classList.remove('active');
             }
-          }, { passive: false });
+          };
+          btnAim.addEventListener('touchstart', toggleAim, { passive: false });
+          btnAim.addEventListener('click', toggleAim);
         }
 
         const btnEnter = document.getElementById('btn-m-enter');
         if (btnEnter) {
-          btnEnter.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+          const doEnter = (e) => {
+            if (e) e.preventDefault();
             if (this.state !== 'PLAYING') return;
             this.toggleVehicleEnterExit();
-          }, { passive: false });
+          };
+          btnEnter.addEventListener('touchstart', doEnter, { passive: false });
+          btnEnter.addEventListener('click', doEnter);
         }
 
         const btnJump = document.getElementById('btn-m-jump');
         if (btnJump) {
-          btnJump.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+          const startJump = (e) => {
+            if (e) e.preventDefault();
             this.keys.space = true;
-          }, { passive: false });
+          };
           const stopJump = (e) => {
-            e.preventDefault();
+            if (e) e.preventDefault();
             this.keys.space = false;
           };
+          btnJump.addEventListener('touchstart', startJump, { passive: false });
           btnJump.addEventListener('touchend', stopJump);
           btnJump.addEventListener('touchcancel', stopJump);
+          btnJump.addEventListener('mousedown', startJump);
+          btnJump.addEventListener('mouseup', stopJump);
         }
 
         const btnWpn = document.getElementById('btn-m-weapon');
         if (btnWpn) {
-          btnWpn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+          const cycleWpn = (e) => {
+            if (e) e.preventDefault();
             this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
-          }, { passive: false });
+          };
+          btnWpn.addEventListener('touchstart', cycleWpn, { passive: false });
+          btnWpn.addEventListener('click', cycleWpn);
         }
 
         const wpnCard = document.querySelector('.weapon-hud-card');
         if (wpnCard) {
           wpnCard.style.pointerEvents = 'auto';
           wpnCard.style.cursor = 'pointer';
-          wpnCard.addEventListener('click', () => {
+          const cycleWpnCard = (e) => {
+            if (e && e.type === 'touchstart') e.preventDefault();
             this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
-          });
-          wpnCard.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
-          }, { passive: false });
+          };
+          wpnCard.addEventListener('click', cycleWpnCard);
+          wpnCard.addEventListener('touchstart', cycleWpnCard, { passive: false });
         }
 
         const btnRadio = document.getElementById('btn-m-radio');
         if (btnRadio) {
-          btnRadio.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+          const cycleRad = (e) => {
+            if (e) e.preventDefault();
             if (this.playerMode === 'IN_VEHICLE') {
               const name = audio.cycleRadio();
               this.showRadioPopup(name);
             }
-          }, { passive: false });
+          };
+          btnRadio.addEventListener('touchstart', cycleRad, { passive: false });
+          btnRadio.addEventListener('click', cycleRad);
         }
       }
 
