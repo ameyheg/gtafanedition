@@ -489,6 +489,267 @@
       transform: scale(1.05);
       box-shadow: 0 0 35px rgba(250, 204, 21, 0.8);
     }
+
+    /* ==========================================================================
+       MOBILE TOUCH CONTROLS (GTA ON-SCREEN VIRTUAL GAMEPAD)
+       ========================================================================== */
+    #mobile-controls {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 30;
+      pointer-events: none;
+      display: none;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    #mobile-controls.visible {
+      display: block;
+    }
+
+    /* Swipe-to-Look Camera Zone (Right side above action buttons) */
+    #touch-look-zone {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 55%;
+      height: 60%;
+      pointer-events: auto;
+      touch-action: none;
+      z-index: 31;
+    }
+
+    /* Analog Joystick Area (Bottom-Left) */
+    #joystick-zone {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      width: 160px;
+      height: 160px;
+      pointer-events: auto;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 35;
+    }
+
+    #joystick-base {
+      position: relative;
+      width: 136px;
+      height: 136px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(17, 24, 39, 0.65) 0%, rgba(3, 7, 18, 0.88) 100%);
+      border: 2px solid rgba(250, 204, 21, 0.5);
+      box-shadow: 0 4px 25px rgba(0, 0, 0, 0.75), inset 0 0 15px rgba(250, 204, 21, 0.15);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    #joystick-knob {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #facc15 0%, #d97706 100%);
+      border: 2px solid #ffffff;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.6), 0 0 15px rgba(250, 204, 21, 0.7);
+      position: absolute;
+      top: calc(50% - 26px);
+      left: calc(50% - 26px);
+      pointer-events: none;
+      transform: translate(0px, 0px);
+      transition: transform 0.04s ease-out;
+    }
+
+    .joystick-arrow {
+      position: absolute;
+      font-size: 10px;
+      color: rgba(250, 204, 21, 0.6);
+      pointer-events: none;
+      font-family: sans-serif;
+    }
+    .arrow-up { top: 6px; left: 50%; transform: translateX(-50%); }
+    .arrow-down { bottom: 6px; left: 50%; transform: translateX(-50%); }
+    .arrow-left { left: 8px; top: 50%; transform: translateY(-50%); }
+    .arrow-right { right: 8px; top: 50%; transform: translateY(-50%); }
+
+    /* Action Buttons Cluster (Bottom-Right) */
+    #mobile-actions {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      display: grid;
+      grid-template-areas:
+        ".         btn-aim   btn-car"
+        "btn-wpn   btn-jump  btn-fire"
+        ".         btn-rad   .";
+      grid-template-columns: 50px 56px 72px;
+      grid-template-rows: 50px 56px 44px;
+      grid-gap: 10px;
+      align-items: center;
+      justify-items: center;
+      pointer-events: none;
+      z-index: 35;
+    }
+
+    .m-btn {
+      pointer-events: auto;
+      touch-action: manipulation;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.65);
+      transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+      padding: 0;
+    }
+
+    .m-btn:active {
+      transform: scale(0.92);
+      filter: brightness(1.2);
+    }
+
+    .m-btn-icon {
+      font-size: 20px;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .m-btn-label {
+      font-size: 9px;
+      font-weight: 700;
+      font-family: 'Oswald', sans-serif;
+      letter-spacing: 1px;
+      margin-top: 2px;
+      pointer-events: none;
+      text-transform: uppercase;
+    }
+
+    .m-btn-fire {
+      grid-area: btn-fire;
+      width: 72px;
+      height: 72px;
+      background: radial-gradient(circle, #ef4444 0%, #b91c1c 100%);
+      border-color: #fca5a5;
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.6);
+    }
+    .m-btn-fire .m-btn-icon { font-size: 26px; }
+
+    .m-btn-aim {
+      grid-area: btn-aim;
+      width: 52px;
+      height: 52px;
+      border-color: rgba(56, 189, 248, 0.6);
+    }
+    .m-btn-aim.active {
+      background: #0284c7;
+      border-color: #38bdf8;
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.8);
+    }
+
+    .m-btn-car {
+      grid-area: btn-car;
+      width: 52px;
+      height: 52px;
+      border-color: rgba(250, 204, 21, 0.6);
+      background: radial-gradient(circle, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
+    }
+
+    .m-btn-jump {
+      grid-area: btn-jump;
+      width: 52px;
+      height: 52px;
+      border-color: rgba(74, 222, 128, 0.6);
+    }
+
+    .m-btn-weapon {
+      grid-area: btn-wpn;
+      width: 48px;
+      height: 48px;
+      border-color: rgba(255, 255, 255, 0.45);
+    }
+
+    .m-btn-radio {
+      grid-area: btn-rad;
+      width: 44px;
+      height: 44px;
+      border-color: rgba(168, 85, 247, 0.6);
+      display: none;
+    }
+
+    /* Responsive adjustments for Mobile & Touch Screens */
+    @media (max-width: 900px), (pointer: coarse) {
+      #hud {
+        padding: 12px 16px;
+      }
+      .bottom-left-hud {
+        position: absolute;
+        top: 14px;
+        left: 14px;
+        gap: 6px;
+      }
+      .radar-wrapper {
+        width: 120px;
+        height: 120px;
+      }
+      .status-bars {
+        width: 120px;
+      }
+      .top-right-hud {
+        gap: 6px;
+      }
+      .money-counter {
+        font-size: 24px;
+      }
+      .weapon-hud-card {
+        padding: 6px 10px;
+      }
+      .start-card {
+        padding: 24px 20px;
+        width: 95%;
+        max-height: 92vh;
+        overflow-y: auto;
+      }
+      .title-gta {
+        font-size: 32px;
+      }
+      .subtitle-gta {
+        font-size: 13px;
+        margin-bottom: 14px;
+      }
+      .controls-table {
+        grid-template-columns: 1fr;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .ctrl-item {
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .play-btn {
+        padding: 12px 34px;
+        font-size: 18px;
+      }
+      #vehicle-speedo {
+        padding: 4px 10px;
+      }
+      #speed-val {
+        font-size: 24px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -508,6 +769,62 @@
   <!-- Context Interaction Prompts -->
   <div id="prompt-box">[F] ENTER VEHICLE</div>
   <div id="radio-popup">RADIO LOS SANTOS</div>
+
+  <!-- Mobile Touch Controls Overlay -->
+  <div id="mobile-controls">
+    <!-- Touch Swipe Look Zone -->
+    <div id="touch-look-zone"></div>
+
+    <!-- Left Thumb Virtual Joystick -->
+    <div id="joystick-zone">
+      <div id="joystick-base">
+        <div id="joystick-knob"></div>
+        <div class="joystick-arrow arrow-up">▲</div>
+        <div class="joystick-arrow arrow-down">▼</div>
+        <div class="joystick-arrow arrow-left">◀</div>
+        <div class="joystick-arrow arrow-right">▶</div>
+      </div>
+    </div>
+
+    <!-- Right Thumb Action Buttons Cluster -->
+    <div id="mobile-actions">
+      <!-- Aim / Precision Target Button -->
+      <button id="btn-m-aim" class="m-btn m-btn-aim" title="Aim Weapon">
+        <span class="m-btn-icon">🎯</span>
+        <span class="m-btn-label">AIM</span>
+      </button>
+
+      <!-- Enter / Exit Car Button -->
+      <button id="btn-m-enter" class="m-btn m-btn-car" title="Enter / Exit Vehicle">
+        <span class="m-btn-icon" id="m-enter-icon">🚗</span>
+        <span class="m-btn-label" id="m-enter-label">ENTER</span>
+      </button>
+
+      <!-- Weapon Switch Quick Button -->
+      <button id="btn-m-weapon" class="m-btn m-btn-weapon" title="Switch Weapon">
+        <span class="m-btn-icon">🔄</span>
+        <span class="m-btn-label">GUN</span>
+      </button>
+
+      <!-- Jump / Handbrake Button -->
+      <button id="btn-m-jump" class="m-btn m-btn-jump" title="Jump / Handbrake">
+        <span class="m-btn-icon" id="m-jump-icon">🦘</span>
+        <span class="m-btn-label" id="m-jump-label">JUMP</span>
+      </button>
+
+      <!-- Fire / Attack Button -->
+      <button id="btn-m-fire" class="m-btn m-btn-fire" title="Attack / Shoot">
+        <span class="m-btn-icon">💥</span>
+        <span class="m-btn-label">FIRE</span>
+      </button>
+
+      <!-- Radio Button (Active in Vehicle) -->
+      <button id="btn-m-radio" class="m-btn m-btn-radio" title="Change Radio">
+        <span class="m-btn-icon">📻</span>
+        <span class="m-btn-label">RADIO</span>
+      </button>
+    </div>
+  </div>
 
   <!-- HUD Interface -->
   <div id="hud">
@@ -599,6 +916,11 @@
           <span>Change Radio</span>
           <span class="ctrl-key">Q &nbsp;or&nbsp; R</span>
         </div>
+      </div>
+
+      <div id="mobile-hint-text" style="font-size: 13px; color: #facc15; margin-bottom: 18px; letter-spacing: 1px; display: none; line-height: 1.4;">
+        📱 <b>TOUCH CONTROLS ACTIVE</b><br>
+        Left Stick: Move/Drive &bull; Right Screen: Look &bull; Buttons: Fire, Aim, Car, Jump
       </div>
 
       <button class="play-btn" id="play-btn">START GAME</button>
@@ -2853,16 +3175,287 @@
           }
         });
 
-        // Start Game Button
-        document.getElementById('play-btn').addEventListener('click', () => {
+        // Start Game Button (Click and Mobile Touch)
+        const startAction = (e) => {
+          if (e) e.preventDefault();
           audio.init();
-          document.body.requestPointerLock();
+          try {
+            if (document.body.requestPointerLock && !('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
+              document.body.requestPointerLock();
+            }
+          } catch (err) {
+            // Pointer lock silently bypassed on touch devices
+          }
           document.getElementById('start-modal').classList.add('hidden');
           this.state = 'PLAYING';
-        });
+        };
+
+        const playBtn = document.getElementById('play-btn');
+        if (playBtn) {
+          playBtn.addEventListener('click', startAction);
+          playBtn.addEventListener('touchstart', startAction, { passive: false });
+        }
+
+        // Initialize On-Screen Mobile Gamepad
+        this.setupMobileControls();
 
         // Prevent Right Click Context Menu
         window.addEventListener('contextmenu', (e) => e.preventDefault());
+      }
+
+      setupMobileControls() {
+        const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        const mobileControls = document.getElementById('mobile-controls');
+        const mobileHint = document.getElementById('mobile-hint-text');
+
+        if (isTouch) {
+          if (mobileControls) mobileControls.classList.add('visible');
+          if (mobileHint) mobileHint.style.display = 'block';
+          document.body.classList.add('is-touch-device');
+        }
+
+        // 1. ANALOG THUMB JOYSTICK (Bottom-Left)
+        const joyZone = document.getElementById('joystick-zone');
+        const joyKnob = document.getElementById('joystick-knob');
+        let joyTouchId = null;
+        let joyBaseX = 0;
+        let joyBaseY = 0;
+        const maxDist = 48;
+
+        const updateJoystick = (clientX, clientY) => {
+          let dx = clientX - joyBaseX;
+          let dy = clientY - joyBaseY;
+          const dist = Math.hypot(dx, dy);
+          if (dist > maxDist) {
+            dx = (dx / dist) * maxDist;
+            dy = (dy / dist) * maxDist;
+          }
+          if (joyKnob) joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+
+          if (dist < 10) {
+            this.keys.w = false;
+            this.keys.s = false;
+            this.keys.a = false;
+            this.keys.d = false;
+            this.keys.shift = false;
+            return;
+          }
+
+          // dy < -12 is forward (W), dy > 12 is backward (S)
+          this.keys.w = (dy < -12);
+          this.keys.s = (dy > 12);
+
+          // dx < -12 is left (A), dx > 12 is right (D)
+          this.keys.a = (dx < -12);
+          this.keys.d = (dx > 12);
+
+          // Sprint / Nitro boost when pushed past 35px
+          this.keys.shift = (dist > 35);
+        };
+
+        if (joyZone) {
+          joyZone.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.changedTouches[0];
+            joyTouchId = touch.identifier;
+            const rect = joyZone.getBoundingClientRect();
+            joyBaseX = rect.left + rect.width / 2;
+            joyBaseY = rect.top + rect.height / 2;
+            updateJoystick(touch.clientX, touch.clientY);
+          }, { passive: false });
+
+          joyZone.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+              const touch = e.changedTouches[i];
+              if (touch.identifier === joyTouchId) {
+                updateJoystick(touch.clientX, touch.clientY);
+                break;
+              }
+            }
+          }, { passive: false });
+
+          const endJoystick = (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+              if (e.changedTouches[i].identifier === joyTouchId) {
+                joyTouchId = null;
+                if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
+                this.keys.w = false;
+                this.keys.s = false;
+                this.keys.a = false;
+                this.keys.d = false;
+                this.keys.shift = false;
+                break;
+              }
+            }
+          };
+          joyZone.addEventListener('touchend', endJoystick);
+          joyZone.addEventListener('touchcancel', endJoystick);
+        }
+
+        // 2. SWIPE-TO-LOOK CAMERA ZONE (Right Half Screen)
+        const lookZone = document.getElementById('touch-look-zone');
+        let lookTouchId = null;
+        let lookLastX = 0;
+        let lookLastY = 0;
+
+        if (lookZone) {
+          lookZone.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.changedTouches[0];
+            lookTouchId = touch.identifier;
+            lookLastX = touch.clientX;
+            lookLastY = touch.clientY;
+          }, { passive: false });
+
+          lookZone.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+              const touch = e.changedTouches[i];
+              if (touch.identifier === lookTouchId) {
+                const dx = touch.clientX - lookLastX;
+                const dy = touch.clientY - lookLastY;
+                lookLastX = touch.clientX;
+                lookLastY = touch.clientY;
+
+                this.mouseYaw -= dx * 0.0055;
+                this.mousePitch -= dy * 0.0045;
+                this.mousePitch = Math.max(-0.6, Math.min(0.8, this.mousePitch));
+                break;
+              }
+            }
+          }, { passive: false });
+
+          const endLook = (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+              if (e.changedTouches[i].identifier === lookTouchId) {
+                lookTouchId = null;
+                break;
+              }
+            }
+          };
+          lookZone.addEventListener('touchend', endLook);
+          lookZone.addEventListener('touchcancel', endLook);
+        }
+
+        // 3. ACTION BUTTONS CLUSTER
+        const btnFire = document.getElementById('btn-m-fire');
+        let fireInterval = null;
+        if (btnFire) {
+          btnFire.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (this.state !== 'PLAYING') return;
+            this.isFiring = true;
+            this.handleWeaponFire();
+            clearInterval(fireInterval);
+            fireInterval = setInterval(() => {
+              if (this.isFiring && this.state === 'PLAYING') this.handleWeaponFire();
+            }, 140);
+          }, { passive: false });
+
+          const stopFire = (e) => {
+            e.preventDefault();
+            this.isFiring = false;
+            clearInterval(fireInterval);
+          };
+          btnFire.addEventListener('touchend', stopFire);
+          btnFire.addEventListener('touchcancel', stopFire);
+        }
+
+        const btnAim = document.getElementById('btn-m-aim');
+        if (btnAim) {
+          btnAim.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (this.state !== 'PLAYING') return;
+            this.isAiming = !this.isAiming;
+            const crosshair = document.getElementById('crosshair');
+            if (this.isAiming) {
+              if (crosshair) crosshair.classList.add('aiming');
+              btnAim.classList.add('active');
+            } else {
+              if (crosshair) crosshair.classList.remove('aiming');
+              btnAim.classList.remove('active');
+            }
+          }, { passive: false });
+        }
+
+        const btnEnter = document.getElementById('btn-m-enter');
+        if (btnEnter) {
+          btnEnter.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (this.state !== 'PLAYING') return;
+            this.toggleVehicleEnterExit();
+          }, { passive: false });
+        }
+
+        const btnJump = document.getElementById('btn-m-jump');
+        if (btnJump) {
+          btnJump.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.keys.space = true;
+          }, { passive: false });
+          const stopJump = (e) => {
+            e.preventDefault();
+            this.keys.space = false;
+          };
+          btnJump.addEventListener('touchend', stopJump);
+          btnJump.addEventListener('touchcancel', stopJump);
+        }
+
+        const btnWpn = document.getElementById('btn-m-weapon');
+        if (btnWpn) {
+          btnWpn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
+          }, { passive: false });
+        }
+
+        const wpnCard = document.querySelector('.weapon-hud-card');
+        if (wpnCard) {
+          wpnCard.style.pointerEvents = 'auto';
+          wpnCard.style.cursor = 'pointer';
+          wpnCard.addEventListener('click', () => {
+            this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
+          });
+          wpnCard.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
+          }, { passive: false });
+        }
+
+        const btnRadio = document.getElementById('btn-m-radio');
+        if (btnRadio) {
+          btnRadio.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (this.playerMode === 'IN_VEHICLE') {
+              const name = audio.cycleRadio();
+              this.showRadioPopup(name);
+            }
+          }, { passive: false });
+        }
+      }
+
+      updateMobileUI() {
+        const isCar = (this.playerMode === 'IN_VEHICLE');
+        const enterIcon = document.getElementById('m-enter-icon');
+        const enterLabel = document.getElementById('m-enter-label');
+        const jumpIcon = document.getElementById('m-jump-icon');
+        const jumpLabel = document.getElementById('m-jump-label');
+        const btnRadio = document.getElementById('btn-m-radio');
+
+        if (isCar) {
+          if (enterIcon) enterIcon.innerText = '🚪';
+          if (enterLabel) enterLabel.innerText = 'EXIT';
+          if (jumpIcon) jumpIcon.innerText = '🛑';
+          if (jumpLabel) jumpLabel.innerText = 'BRAKE';
+          if (btnRadio) btnRadio.style.display = 'flex';
+        } else {
+          if (enterIcon) enterIcon.innerText = '🚗';
+          if (enterLabel) enterLabel.innerText = 'ENTER';
+          if (jumpIcon) jumpIcon.innerText = '🦘';
+          if (jumpLabel) jumpLabel.innerText = 'JUMP';
+          if (btnRadio) btnRadio.style.display = 'none';
+        }
       }
 
       setupRadar() {
@@ -3305,7 +3898,8 @@
             this.activeVehicle = nearest;
             this.player.mesh.visible = false;
             document.getElementById('vehicle-speedo').style.display = 'flex';
-            document.getElementById('prompt-box').innerText = '[F] EXIT VEHICLE';
+            const isTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+            document.getElementById('prompt-box').innerText = isTouch ? 'TAP 🚪 TO EXIT VEHICLE' : '[F] EXIT VEHICLE';
             document.getElementById('prompt-box').style.display = 'block';
 
             if (nearest.type === 'police') {
@@ -3327,6 +3921,8 @@
             if (nearest.type === 'police' && this.wantedLevel === 0) {
               this.setWantedLevel(1);
             }
+
+            this.updateMobileUI();
           }
         } else {
           // Exit vehicle
@@ -3342,6 +3938,8 @@
           this.activeVehicle = null;
           document.getElementById('vehicle-speedo').style.display = 'none';
           document.getElementById('prompt-box').style.display = 'none';
+
+          this.updateMobileUI();
         }
       }
 
@@ -4240,15 +4838,53 @@
             this.player.mixer.update(delta);
           }
 
-          // Step up / down dynamically between road and pavement
-          const targetY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z);
-          this.player.mesh.position.y = THREE.MathUtils.lerp(this.player.mesh.position.y, targetY, delta * 20);
+          // Jumping physics on foot
+          if (this.keys.space && !this.player.isJumping) {
+            this.player.isJumping = true;
+            this.player.jumpVel = 7.0;
+          }
+          if (this.player.isJumping) {
+            this.player.mesh.position.y += this.player.jumpVel * delta;
+            this.player.jumpVel -= 22 * delta;
+            const groundY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z);
+            if (this.player.mesh.position.y <= groundY) {
+              this.player.mesh.position.y = groundY;
+              this.player.isJumping = false;
+              this.player.jumpVel = 0;
+            }
+          } else {
+            // Step up / down dynamically between road and pavement
+            const targetY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z);
+            this.player.mesh.position.y = THREE.MathUtils.lerp(this.player.mesh.position.y, targetY, delta * 20);
+          }
 
           // Building collision on foot (cannot walk through walls)
           this.resolveBuildingCollisions(this.player.mesh.position, 0.6);
 
           // Vehicle collision on foot (cannot walk through cars)
           this.resolveVehicleObstacleCollisions(this.player.mesh.position, 0.65, this.activeVehicle);
+
+          // Vehicle proximity detection for carjacking prompt
+          let nearVehicle = false;
+          if (this.vehicles) {
+            for (let i = 0; i < this.vehicles.length; i++) {
+              const veh = this.vehicles[i];
+              if (!veh.isWreck && veh.mesh && veh.mesh.position.distanceTo(this.player.mesh.position) < 5.5) {
+                nearVehicle = true;
+                break;
+              }
+            }
+          }
+          const promptBox = document.getElementById('prompt-box');
+          if (promptBox) {
+            if (nearVehicle) {
+              const isTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+              promptBox.innerText = isTouch ? 'TAP 🚗 TO ENTER VEHICLE' : '[F] ENTER VEHICLE';
+              promptBox.style.display = 'block';
+            } else {
+              promptBox.style.display = 'none';
+            }
+          }
 
           // Camera Follows Player
           const camOffset = new THREE.Vector3(
@@ -5031,6 +5667,14 @@
           this.playerCash = Math.max(0, this.playerCash - 5000);
           this.wantedLevel = 0;
           this.setWantedLevel(0);
+          if (this.playerMode === 'IN_VEHICLE') {
+            this.playerMode = 'ON_FOOT';
+            this.player.mesh.visible = true;
+            this.activeVehicle = null;
+            document.getElementById('vehicle-speedo').style.display = 'none';
+            document.getElementById('prompt-box').style.display = 'none';
+          }
+          this.updateMobileUI();
           this.player.mesh.position.set(0, 0, 15);
           document.getElementById('health-bar').style.width = '100%';
           document.getElementById('armor-bar').style.width = '100%';
