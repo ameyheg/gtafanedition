@@ -947,8 +947,20 @@
           <span class="ctrl-key">SPACEBAR</span>
         </div>
         <div class="ctrl-item">
-          <span>Enter / Exit Car</span>
+          <span>Enter / Exit Vehicle</span>
           <span class="ctrl-key">F &nbsp;or&nbsp; ENTER</span>
+        </div>
+        <div class="ctrl-item" style="color: #60a5fa; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 6px; margin-top: 4px;">
+          <span>🚁 Heli Climb / Ascend</span>
+          <span class="ctrl-key">SPACEBAR</span>
+        </div>
+        <div class="ctrl-item" style="color: #38bdf8;">
+          <span>🚁 Heli Lower / Descend</span>
+          <span class="ctrl-key">SHIFT &nbsp;or&nbsp; CTRL &nbsp;or&nbsp; C</span>
+        </div>
+        <div class="ctrl-item" style="color: #facc15;">
+          <span>🚁 Heli Auto-Land</span>
+          <span class="ctrl-key">L</span>
         </div>
         <div class="ctrl-item">
           <span>Aim Weapon</span>
@@ -1514,18 +1526,40 @@
         this.isEngineRunning = false;
       }
 
-      startCarEngine() {
+      startCarEngine(isMotorcycle = false) {
         if (!this.ctx) return;
         if (!this.engineOsc1) this.initCarEngine();
         this.isEngineRunning = true;
+        this.isMotorcycleEngine = isMotorcycle;
         const now = this.ctx.currentTime;
 
-        // V8 Ignition rev roar
-        this.playIgnitionSound();
+        if (isMotorcycle) {
+          this.playMotorcycleIgnitionSound();
+        } else {
+          // V8 Ignition rev roar
+          this.playIgnitionSound();
+        }
 
         this.engineGain.gain.cancelScheduledValues(now);
         this.engineGain.gain.setValueAtTime(0.01, now);
-        this.engineGain.gain.exponentialRampToValueAtTime(0.24, now + 0.35);
+        this.engineGain.gain.exponentialRampToValueAtTime(isMotorcycle ? 0.22 : 0.24, now + 0.35);
+      }
+
+      playMotorcycleIgnitionSound() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const starter = this.ctx.createOscillator();
+        const sGain = this.ctx.createGain();
+        starter.type = 'sawtooth';
+        starter.frequency.setValueAtTime(220, now);
+        starter.frequency.exponentialRampToValueAtTime(520, now + 0.18);
+        starter.frequency.exponentialRampToValueAtTime(140, now + 0.38);
+        sGain.gain.setValueAtTime(0.28, now);
+        sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+        starter.connect(sGain);
+        sGain.connect(this.masterGain);
+        starter.start(now);
+        starter.stop(now + 0.42);
       }
 
       playIgnitionSound() {
@@ -1551,21 +1585,37 @@
         const absSpeed = Math.abs(speed);
         const speedRatio = Math.min(1.0, absSpeed / Math.max(1, maxSpeed));
 
-        // Simulated 4-gear RPM curve
-        const gearCycle = (speedRatio * 3.5) % 1.0;
-        const baseFreq = 42 + gearCycle * 75 + speedRatio * 45;
-        const targetFreq = isAccelerating ? baseFreq * 1.15 : (isBraking ? baseFreq * 0.85 : baseFreq);
+        if (this.isMotorcycleEngine) {
+          // High-revving superbike (82Hz to 380Hz screaming 4-cylinder with 5th harmonic whine)
+          const gearCycle = (speedRatio * 4.5) % 1.0;
+          const baseFreq = 82 + gearCycle * 145 + speedRatio * 85;
+          const targetFreq = isAccelerating ? baseFreq * 1.18 : (isBraking ? baseFreq * 0.82 : baseFreq);
 
-        this.engineOsc1.frequency.setTargetAtTime(targetFreq, now, 0.08);
-        this.engineOsc2.frequency.setTargetAtTime(targetFreq * 0.5, now, 0.08);
+          this.engineOsc1.frequency.setTargetAtTime(targetFreq, now, 0.06);
+          this.engineOsc2.frequency.setTargetAtTime(targetFreq * 1.5, now, 0.06);
 
-        // Filter cutoff sweeps: open exhaust on throttle
-        const targetFilterCutoff = isAccelerating ? 450 + speedRatio * 900 : 320 + speedRatio * 300;
-        this.engineFilter.frequency.setTargetAtTime(targetFilterCutoff, now, 0.08);
+          const targetFilterCutoff = isAccelerating ? 1100 + speedRatio * 2200 : 700 + speedRatio * 600;
+          this.engineFilter.frequency.setTargetAtTime(targetFilterCutoff, now, 0.06);
 
-        // Volume modulation
-        const targetVol = isAccelerating ? 0.24 + speedRatio * 0.08 : 0.15 + speedRatio * 0.05;
-        this.engineGain.gain.setTargetAtTime(targetVol, now, 0.08);
+          const targetVol = isAccelerating ? 0.26 + speedRatio * 0.08 : 0.16 + speedRatio * 0.05;
+          this.engineGain.gain.setTargetAtTime(targetVol, now, 0.06);
+        } else {
+          // Simulated 4-gear RPM curve for cars
+          const gearCycle = (speedRatio * 3.5) % 1.0;
+          const baseFreq = 42 + gearCycle * 75 + speedRatio * 45;
+          const targetFreq = isAccelerating ? baseFreq * 1.15 : (isBraking ? baseFreq * 0.85 : baseFreq);
+
+          this.engineOsc1.frequency.setTargetAtTime(targetFreq, now, 0.08);
+          this.engineOsc2.frequency.setTargetAtTime(targetFreq * 0.5, now, 0.08);
+
+          // Filter cutoff sweeps: open exhaust on throttle
+          const targetFilterCutoff = isAccelerating ? 450 + speedRatio * 900 : 320 + speedRatio * 300;
+          this.engineFilter.frequency.setTargetAtTime(targetFilterCutoff, now, 0.08);
+
+          // Volume modulation
+          const targetVol = isAccelerating ? 0.24 + speedRatio * 0.08 : 0.15 + speedRatio * 0.05;
+          this.engineGain.gain.setTargetAtTime(targetVol, now, 0.08);
+        }
 
         // Tire Skid / Drift Sound
         if (this.skidGain) {
@@ -1581,6 +1631,67 @@
         this.engineGain.gain.cancelScheduledValues(now);
         this.engineGain.gain.setTargetAtTime(0, now, 0.15);
         if (this.skidGain) this.skidGain.gain.setTargetAtTime(0, now, 0.1);
+      }
+
+      initHeliEngine() {
+        if (!this.ctx || this.heliGain) return;
+        // Low-frequency pulsating rotor thud (18-28 Hz)
+        this.heliOsc = this.ctx.createOscillator();
+        this.heliOsc.type = 'sawtooth';
+        this.heliOsc.frequency.setValueAtTime(22, this.ctx.currentTime);
+
+        this.heliFilter = this.ctx.createBiquadFilter();
+        this.heliFilter.type = 'lowpass';
+        this.heliFilter.frequency.setValueAtTime(220, this.ctx.currentTime);
+        this.heliFilter.Q.setValueAtTime(3.5, this.ctx.currentTime);
+
+        // High-frequency turbine engine whine (700-1100 Hz)
+        this.heliTurbine = this.ctx.createOscillator();
+        this.heliTurbine.type = 'sine';
+        this.heliTurbine.frequency.setValueAtTime(780, this.ctx.currentTime);
+
+        this.heliTurbineGain = this.ctx.createGain();
+        this.heliTurbineGain.gain.setValueAtTime(0.04, this.ctx.currentTime);
+
+        this.heliGain = this.ctx.createGain();
+        this.heliGain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+        this.heliOsc.connect(this.heliFilter);
+        this.heliFilter.connect(this.heliGain);
+        this.heliTurbine.connect(this.heliTurbineGain);
+        this.heliTurbineGain.connect(this.heliGain);
+        this.heliGain.connect(this.masterGain);
+
+        this.heliOsc.start();
+        this.heliTurbine.start();
+        this.isHeliRunning = false;
+      }
+
+      startHeliEngine() {
+        if (!this.ctx) return;
+        if (!this.heliGain) this.initHeliEngine();
+        this.isHeliRunning = true;
+        const now = this.ctx.currentTime;
+        this.heliGain.gain.cancelScheduledValues(now);
+        this.heliGain.gain.setValueAtTime(0.01, now);
+        this.heliGain.gain.exponentialRampToValueAtTime(0.28, now + 1.2);
+      }
+
+      stopHeliEngine() {
+        if (!this.ctx || !this.heliGain) return;
+        this.isHeliRunning = false;
+        const now = this.ctx.currentTime;
+        this.heliGain.gain.cancelScheduledValues(now);
+        this.heliGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.2);
+      }
+
+      updateHeliEngine(altitude, speed, isClimbing) {
+        if (!this.ctx || !this.isHeliRunning || !this.heliOsc) return;
+        const now = this.ctx.currentTime;
+        const baseFreq = isClimbing ? 28 : (speed > 5 ? 24 : 19);
+        this.heliOsc.frequency.setTargetAtTime(baseFreq, now, 0.1);
+        this.heliTurbine.frequency.setTargetAtTime(760 + speed * 10 + altitude * 1.5, now, 0.2);
+        this.heliFilter.frequency.setTargetAtTime(180 + (isClimbing ? 140 : 50), now, 0.15);
       }
     }
 
@@ -2159,12 +2270,19 @@
 
         group.add(mbGroup);
 
-        // Register tight collision bounding boxes for Maze Bank
+        // Register tight collision bounding boxes and summit helipad for Maze Bank
         buildings.push({
           minX: x - 26,
           maxX: x + 26,
           minZ: z - 26,
           maxZ: z + 26,
+          roofMinX: x - 16,
+          roofMaxX: x + 16,
+          roofMinZ: z - 16,
+          roofMaxZ: z + 16,
+          height: 166.0,
+          roofY: 166.0,
+          type: 'mazebank',
           mesh: lobby
         });
       }
@@ -2220,11 +2338,19 @@
 
         group.add(bGroup);
 
+        const actualRoofY = 0.20 + 78 + h3;
         buildings.push({
           minX: x - subSize / 2,
           maxX: x + subSize / 2,
           minZ: z - subSize / 2,
           maxZ: z + subSize / 2,
+          roofMinX: x - s3 * 0.52,
+          roofMaxX: x + s3 * 0.52,
+          roofMinZ: z - s3 * 0.52,
+          roofMaxZ: z + s3 * 0.52,
+          height: actualRoofY,
+          roofY: actualRoofY,
+          type: 'stepped',
           mesh: t1
         });
       }
@@ -2308,16 +2434,24 @@
         bGroup.add(wtGroup);
         group.add(bGroup);
 
+        const brickRoofY = height + 0.20;
         buildings.push({
           minX: x - subSize / 2,
           maxX: x + subSize / 2,
           minZ: z - subSize / 2,
           maxZ: z + subSize / 2,
+          roofMinX: x - subSize / 2 + 1.2,
+          roofMaxX: x + subSize / 2 - 1.2,
+          roofMinZ: z - subSize / 2 + 1.2,
+          roofMaxZ: z + subSize / 2 - 1.2,
+          height: brickRoofY,
+          roofY: brickRoofY,
+          type: 'brick',
           mesh: body
         });
       }
 
-      // Luxury Condo Tower with Balconies & Rooftop Pool
+      // Luxury Condo Tower with Balconies & Rooftop Pool / Helipad
       static buildCondoTower(group, x, z, subSize, height, facadeMat, helipadTex, buildings) {
         const bGroup = new THREE.Group();
         bGroup.position.set(x, 0.20, z);
@@ -2347,27 +2481,43 @@
         // Rooftop Swimming Pool Terrace
         const roofY = height;
         const pool = new THREE.Mesh(
-          new THREE.BoxGeometry(subSize * 0.55, 1.2, subSize * 0.4),
+          new THREE.BoxGeometry(subSize * 0.45, 1.2, subSize * 0.35),
           new THREE.MeshStandardMaterial({ color: 0x06b6d4, roughness: 0.1, metalness: 0.3 })
         );
-        pool.position.set(0, roofY + 0.6, 0);
+        pool.position.set(-subSize * 0.22, roofY + 0.6, 0);
         bGroup.add(pool);
 
         // Pool deck wooden border
         const deck = new THREE.Mesh(
-          new THREE.BoxGeometry(subSize * 0.75, 0.4, subSize * 0.6),
+          new THREE.BoxGeometry(subSize * 0.55, 0.4, subSize * 0.45),
           new THREE.MeshStandardMaterial({ color: 0xa16207, roughness: 0.8 })
         );
-        deck.position.set(0, roofY + 0.2, 0);
+        deck.position.set(-subSize * 0.22, roofY + 0.2, 0);
         bGroup.add(deck);
+
+        // Rooftop Helipad Decal on Condo Roof
+        const helipad = new THREE.Mesh(
+          new THREE.CylinderGeometry(subSize * 0.22, subSize * 0.22, 0.3, 32),
+          new THREE.MeshStandardMaterial({ map: helipadTex, roughness: 0.7 })
+        );
+        helipad.position.set(subSize * 0.22, roofY + 0.16, 0);
+        bGroup.add(helipad);
 
         group.add(bGroup);
 
+        const condoRoofY = height + 0.20;
         buildings.push({
           minX: x - subSize / 2,
           maxX: x + subSize / 2,
           minZ: z - subSize / 2,
           maxZ: z + subSize / 2,
+          roofMinX: x - subSize / 2 + 1.2,
+          roofMaxX: x + subSize / 2 - 1.2,
+          roofMinZ: z - subSize / 2 + 1.2,
+          roofMaxZ: z + subSize / 2 - 1.2,
+          height: condoRoofY,
+          roofY: condoRoofY,
+          type: 'condo',
           mesh: body
         });
       }
@@ -2665,8 +2815,180 @@
     }
 
     class EntityBuilder {
-      // Create Los Santos Vehicles (Supercar, Muscle Car, Police Interceptor)
+      // Helipad Texture Generator for street and skyscraper landing pads
+      static createHelipadTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Dark asphalt base
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.arc(256, 256, 250, 0, Math.PI * 2);
+        ctx.fill();
+
+        // White perimeter ring
+        ctx.strokeStyle = '#f8fafc';
+        ctx.lineWidth = 14;
+        ctx.beginPath();
+        ctx.arc(256, 256, 235, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Glowing yellow warning circle
+        ctx.strokeStyle = '#facc15';
+        ctx.lineWidth = 20;
+        ctx.beginPath();
+        ctx.arc(256, 256, 204, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Bold yellow Helipad "H"
+        ctx.fillStyle = '#facc15';
+        ctx.font = '900 240px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('H', 256, 256);
+
+        // Asphalt weathering markings
+        ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+        ctx.lineWidth = 4;
+        for (let i = 0; i < 5; i++) {
+          ctx.beginPath();
+          ctx.moveTo(100, 120 + i * 65);
+          ctx.lineTo(412, 122 + i * 65);
+          ctx.stroke();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        return tex;
+      }
+
+      // Create Los Santos Vehicles (Supercar, Muscle Car, Police Interceptor, Superbike Motorcycle, Military/Civilian Helicopter)
       static createVehicle(type = 'sports', colorHex = 0xd90429) {
+        if (type === 'helicopter') {
+          const heli = new THREE.Group();
+          const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex || 0x1e3a8a, metalness: 0.7, roughness: 0.3 });
+          const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.8, 4.4), bodyMat);
+          cabin.position.set(0, 1.4, 0.4);
+          cabin.castShadow = true;
+          heli.add(cabin);
+
+          const glassMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.7 });
+          const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.2, 1.4), glassMat);
+          windshield.position.set(0, 1.5, 2.3);
+          heli.add(windshield);
+
+          const tailBoom = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.45, 5.2), bodyMat);
+          tailBoom.rotation.x = Math.PI / 2;
+          tailBoom.position.set(0, 1.5, -3.4);
+          tailBoom.castShadow = true;
+          heli.add(tailBoom);
+
+          const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.4, 0.9), bodyMat);
+          tailFin.position.set(0, 2.0, -5.8);
+          heli.add(tailFin);
+
+          const skidMat = new THREE.MeshStandardMaterial({ color: 0x222225, metalness: 0.85, roughness: 0.2 });
+          const skidL = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 5.2), skidMat);
+          skidL.rotation.x = Math.PI / 2;
+          skidL.position.set(-1.15, 0.2, 0.2);
+          const skidR = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 5.2), skidMat);
+          skidR.rotation.x = Math.PI / 2;
+          skidR.position.set(1.15, 0.2, 0.2);
+          heli.add(skidL, skidR);
+
+          const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.7), skidMat);
+          shaft.position.set(0, 2.5, 0.5);
+          heli.add(shaft);
+
+          const mainRotor = new THREE.Group();
+          mainRotor.position.set(0, 2.85, 0.5);
+          const bladeMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.8 });
+          const blade1 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 8.4), bladeMat);
+          const blade2 = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.04, 0.28), bladeMat);
+          mainRotor.add(blade1, blade2);
+          heli.add(mainRotor);
+
+          return {
+            mesh: heli,
+            type: 'helicopter',
+            mainRotor: mainRotor,
+            wheels: [],
+            policeLights: null,
+            speed: 0,
+            steer: 0,
+            verticalSpeed: 0,
+            rotorSpeed: 4.0,
+            health: 800,
+            maxHealth: 800,
+            isDrivable: true,
+            isFlying: false,
+            color: colorHex
+          };
+        }
+
+        if (type === 'motorcycle') {
+          const bike = new THREE.Group();
+          const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex, metalness: 0.8, roughness: 0.25 });
+          const frameMat = new THREE.MeshStandardMaterial({ color: 0x222225, metalness: 0.9, roughness: 0.3 });
+          const chromeMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.95, roughness: 0.1 });
+          const rubberMat = new THREE.MeshStandardMaterial({ color: 0x15161a, roughness: 0.85 });
+
+          // Frame & Engine block (30% bigger)
+          const engine = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.58, 0.78), frameMat);
+          engine.position.set(0, 0.58, 0);
+          engine.castShadow = true;
+          bike.add(engine);
+
+          // Fuel tank
+          const tank = new THREE.Mesh(new THREE.BoxGeometry(0.49, 0.39, 0.85), bodyMat);
+          tank.position.set(0, 1.01, 0.2);
+          tank.castShadow = true;
+          bike.add(tank);
+
+          // Seat
+          const seat = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.78), new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 }));
+          seat.position.set(0, 0.94, -0.42);
+          seat.castShadow = true;
+          bike.add(seat);
+
+          // Handlebars
+          const bars = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.065, 0.065), chromeMat);
+          bars.position.set(0, 1.20, 0.65);
+          bike.add(bars);
+
+          // Headlight & Taillight
+          const hl = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.065), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+          hl.position.set(0, 1.07, 0.88);
+          const tl = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.10, 0.065), new THREE.MeshBasicMaterial({ color: 0xff0033 }));
+          tl.position.set(0, 0.94, -0.88);
+          bike.add(hl, tl);
+
+          // 2 Wheels (Front at z = 0.94, Rear at z = -0.94, Radius 0.42)
+          const wheelGeom = new THREE.CylinderGeometry(0.42, 0.42, 0.18, 16);
+          wheelGeom.rotateZ(Math.PI / 2);
+          const frontWheel = new THREE.Mesh(wheelGeom, rubberMat);
+          frontWheel.position.set(0, 0.42, 0.94);
+          frontWheel.castShadow = true;
+          const rearWheel = new THREE.Mesh(wheelGeom, rubberMat);
+          rearWheel.position.set(0, 0.42, -0.94);
+          rearWheel.castShadow = true;
+          bike.add(frontWheel, rearWheel);
+
+          return {
+            mesh: bike,
+            type: 'motorcycle',
+            wheels: [{ id: 'FW', mesh: frontWheel }, { id: 'RW', mesh: rearWheel }],
+            policeLights: null,
+            speed: 0,
+            steer: 0,
+            health: 400,
+            maxHealth: 400,
+            isDrivable: true,
+            color: colorHex
+          };
+        }
+
         const car = new THREE.Group();
 
         let isPolice = type === 'police';
@@ -3005,7 +3327,7 @@
         this.isFiring = false;
 
         // Inputs
-        this.keys = { w: false, a: false, s: false, d: false, shift: false, space: false };
+        this.keys = { w: false, a: false, s: false, d: false, shift: false, space: false, ctrl: false };
         this.mousePitch = 0;
         this.mouseYaw = 0;
 
@@ -3076,7 +3398,8 @@
         });
       }
 
-      getGroundHeight(x, z) {
+      getGroundHeight(x, z, currentY = null) {
+        let groundY = 0.0;
         const blockSize = 90;
         const streetWidth = 24;
         const fullStep = blockSize + streetWidth; // 114
@@ -3090,10 +3413,33 @@
           const dz = Math.abs(z - cz);
 
           if (dx <= blockSize / 2 && dz <= blockSize / 2) {
-            return 0.20; // Sidewalk / pavement elevation
+            groundY = 0.20; // Sidewalk / pavement elevation
           }
         }
-        return 0.0; // Street / road elevation
+
+        // Rooftop Surface Detection (Permits landing & walking on building roofs)
+        if (currentY !== null && currentY > 4.0 && this.city && this.city.buildings) {
+          for (let i = 0; i < this.city.buildings.length; i++) {
+            const b = this.city.buildings[i];
+            if (!b.roofY) continue;
+
+            const rMinX = (b.roofMinX !== undefined) ? b.roofMinX : b.minX;
+            const rMaxX = (b.roofMaxX !== undefined) ? b.roofMaxX : b.maxX;
+            const rMinZ = (b.roofMinZ !== undefined) ? b.roofMinZ : b.minZ;
+            const rMaxZ = (b.roofMaxZ !== undefined) ? b.roofMaxZ : b.maxZ;
+
+            // Margin allows solid landing even near roof boundaries
+            if (x >= (rMinX - 1.2) && x <= (rMaxX + 1.2) && z >= (rMinZ - 1.2) && z <= (rMaxZ + 1.2)) {
+              if (currentY >= (b.roofY - 4.5)) {
+                if (b.roofY > groundY) {
+                  groundY = b.roofY;
+                }
+              }
+            }
+          }
+        }
+
+        return groundY;
       }
 
       initPlayer() {
@@ -3108,28 +3454,65 @@
 
       populateCityVehicles() {
         const spawnCoords = [
+          // Avenue East: Superbike motorcycle parked curbside (x = 48.2, z = 4), facing South (rot = 0), right next to player!
+          { x: 48.2, z: 4, rot: 0, type: 'motorcycle', color: 0x22c55e },
+          // Avenue East: AW101 Military/Police Helicopter parked right near motorcycle on marked helipad! (x = 52.0, z = -2), facing South (rot = 0)
+          { x: 52.0, z: -2, rot: 0, type: 'helicopter', color: 0x1e3a8a },
+          // Maze Bank Tower Apex Helipad (166m Rooftop Summit)
+          { x: 0, y: 166.0, z: 0, rot: 0, type: 'helicopter', color: 0xd90429 },
           // Avenue East (x = 57, west curb at x = 45): curbside parking lane (x = 48.2), facing South (rot = 0), right next to player!
-          { x: 48.2, z: 12, rot: 0, type: 'sports', color: 0x00f0ff },
+          { x: 48.2, z: 14, rot: 0, type: 'sports', color: 0x00f0ff },
           // Avenue East (east curb at x = 69): curbside parking lane (x = 65.8), facing North (rot = Math.PI)
           { x: 65.8, z: -20, rot: Math.PI, type: 'muscle', color: 0xffaa00 },
           // Street South (z = 57, north curb at z = 45): curbside parking lane (z = 48.2), facing East (rot = Math.PI / 2)
           { x: 15, z: 48.2, rot: Math.PI / 2, type: 'sports', color: 0xd90429 },
+          // Street South: Ducati Red motorcycle parked curbside
+          { x: 2, z: 48.2, rot: Math.PI / 2, type: 'motorcycle', color: 0xef4444 },
           // Street South (south curb at z = 69): curbside parking lane (z = 65.8), facing West (rot = -Math.PI / 2)
           { x: -30, z: 65.8, rot: -Math.PI / 2, type: 'muscle', color: 0x10b981 },
+          // Central Plaza: Racing Yellow motorcycle parked curbside
+          { x: -15, z: 65.8, rot: -Math.PI / 2, type: 'motorcycle', color: 0xfacc15 },
           // Avenue West (x = -57, east curb at x = -45): Police Cruiser parked curbside (x = -48.2), facing North (rot = Math.PI)
           { x: -48.2, z: 25, rot: Math.PI, type: 'police', color: 0x0f141c },
+          // Avenue West: Yamaha Racing Blue motorcycle parked curbside
+          { x: -48.2, z: -10, rot: Math.PI, type: 'motorcycle', color: 0x2563eb },
           // Avenue East (x = 57, west curb at x = 45): Police Cruiser parked curbside (x = 48.2), facing South (rot = 0)
           { x: 48.2, z: -90, rot: 0, type: 'police', color: 0x0f141c }
         ];
 
+        // Add Authentic Painted Helipads
+        const helipadTex = EntityBuilder.createHelipadTexture();
+        const helipadMat = new THREE.MeshStandardMaterial({
+          map: helipadTex,
+          transparent: true,
+          roughness: 0.8
+        });
+
+        // Curbside Avenue East Helipad right in front of the motorcycle
+        const padGeom = new THREE.PlaneGeometry(13, 13);
+        const streetPad = new THREE.Mesh(padGeom, helipadMat);
+        streetPad.rotation.x = -Math.PI / 2;
+        streetPad.position.set(52.0, 0.02, -2);
+        this.scene.add(streetPad);
+
+        // Maze Bank Tower Rooftop Helipad
+        const roofPad = new THREE.Mesh(padGeom, helipadMat);
+        roofPad.rotation.x = -Math.PI / 2;
+        roofPad.position.set(0, 166.02, 0);
+        this.scene.add(roofPad);
+
         spawnCoords.forEach(c => {
           const v = EntityBuilder.createVehicle(c.type, c.color);
-          v.mesh.position.set(c.x, 0, c.z);
+          const groundY = (c.y !== undefined) ? c.y : this.getGroundHeight(c.x, c.z);
+          v.mesh.position.set(c.x, groundY, c.z);
           v.mesh.rotation.y = c.rot || 0;
           this.scene.add(v.mesh);
           this.vehicles.push(v);
           if (c.type === 'police') {
             this.policeCars.push(v);
+          }
+          if (c.type === 'helicopter' && this.helicopterTemplate) {
+            this.applyHelicopterModel(v);
           }
         });
       }
@@ -3159,8 +3542,18 @@
           if (code === 'KeyA' || code === 'ArrowLeft') this.keys.a = true;
           if (code === 'KeyS' || code === 'ArrowDown') this.keys.s = true;
           if (code === 'KeyD' || code === 'ArrowRight') this.keys.d = true;
-          if (code === 'ShiftLeft' || code === 'ShiftRight') this.keys.shift = true;
+          if (code === 'ShiftLeft' || code === 'ShiftRight' || code === 'ControlLeft' || code === 'ControlRight' || code === 'KeyC' || code === 'KeyX') {
+            this.keys.shift = true;
+            this.keys.ctrl = true;
+          }
           if (code === 'Space') { this.keys.space = true; e.preventDefault(); }
+
+          // Helicopter Auto-Land Toggle
+          if (code === 'KeyL') {
+            if (this.playerMode === 'IN_VEHICLE' && this.activeVehicle && this.activeVehicle.type === 'helicopter') {
+              this.activeVehicle.isAutoLanding = !this.activeVehicle.isAutoLanding;
+            }
+          }
 
           // Enter/Exit Vehicle
           if (code === 'KeyF' || code === 'Enter') {
@@ -3188,7 +3581,10 @@
           if (code === 'KeyA' || code === 'ArrowLeft') this.keys.a = false;
           if (code === 'KeyS' || code === 'ArrowDown') this.keys.s = false;
           if (code === 'KeyD' || code === 'ArrowRight') this.keys.d = false;
-          if (code === 'ShiftLeft' || code === 'ShiftRight') this.keys.shift = false;
+          if (code === 'ShiftLeft' || code === 'ShiftRight' || code === 'ControlLeft' || code === 'ControlRight' || code === 'KeyC' || code === 'KeyX') {
+            this.keys.shift = false;
+            this.keys.ctrl = false;
+          }
           if (code === 'Space') this.keys.space = false;
         });
 
@@ -3477,9 +3873,14 @@
 
         const btnAim = document.getElementById('btn-m-aim');
         if (btnAim) {
-          const toggleAim = (e) => {
+          const startAimOrDescend = (e) => {
             if (e) e.preventDefault();
             if (this.state !== 'PLAYING') return;
+            if (this.playerMode === 'IN_VEHICLE' && this.activeVehicle && this.activeVehicle.type === 'helicopter') {
+              this.keys.shift = true;
+              btnAim.classList.add('active');
+              return;
+            }
             this.isAiming = !this.isAiming;
             const crosshair = document.getElementById('crosshair');
             if (this.isAiming) {
@@ -3490,8 +3891,16 @@
               btnAim.classList.remove('active');
             }
           };
-          btnAim.addEventListener('touchstart', toggleAim, { passive: false });
-          btnAim.addEventListener('click', toggleAim);
+          const stopAimOrDescend = (e) => {
+            if (this.playerMode === 'IN_VEHICLE' && this.activeVehicle && this.activeVehicle.type === 'helicopter') {
+              this.keys.shift = false;
+              btnAim.classList.remove('active');
+            }
+          };
+          btnAim.addEventListener('touchstart', startAimOrDescend, { passive: false });
+          btnAim.addEventListener('touchend', stopAimOrDescend);
+          btnAim.addEventListener('mousedown', startAimOrDescend);
+          btnAim.addEventListener('mouseup', stopAimOrDescend);
         }
 
         const btnEnter = document.getElementById('btn-m-enter');
@@ -3565,19 +3974,36 @@
         const jumpIcon = document.getElementById('m-jump-icon');
         const jumpLabel = document.getElementById('m-jump-label');
         const btnRadio = document.getElementById('btn-m-radio');
+        const btnAim = document.getElementById('btn-m-aim');
 
         if (isCar) {
-          if (enterIcon) enterIcon.innerText = '🚪';
-          if (enterLabel) enterLabel.innerText = 'EXIT';
-          if (jumpIcon) jumpIcon.innerText = '🛑';
-          if (jumpLabel) jumpLabel.innerText = 'BRAKE';
-          if (btnRadio) btnRadio.style.display = 'flex';
+          const isBike = this.activeVehicle && this.activeVehicle.type === 'motorcycle';
+          const isHeli = this.activeVehicle && this.activeVehicle.type === 'helicopter';
+
+          if (enterIcon) enterIcon.innerText = isHeli ? '🚁' : '🚪';
+          if (enterLabel) enterLabel.innerText = isHeli ? 'EXIT HELI' : (isBike ? 'DISMOUNT' : 'EXIT');
+          if (jumpIcon) jumpIcon.innerText = isHeli ? '⬆️' : '🛑';
+          if (jumpLabel) jumpLabel.innerText = isHeli ? 'CLIMB' : 'BRAKE';
+          if (btnRadio) btnRadio.style.display = isHeli ? 'none' : 'flex';
+
+          if (isHeli && btnAim) {
+            const aIcon = btnAim.querySelector('.m-btn-icon');
+            const aLabel = btnAim.querySelector('.m-btn-label');
+            if (aIcon) aIcon.innerText = '⬇️';
+            if (aLabel) aLabel.innerText = 'DESCEND';
+          }
         } else {
           if (enterIcon) enterIcon.innerText = '🚗';
           if (enterLabel) enterLabel.innerText = 'ENTER';
           if (jumpIcon) jumpIcon.innerText = '🦘';
           if (jumpLabel) jumpLabel.innerText = 'JUMP';
           if (btnRadio) btnRadio.style.display = 'none';
+          if (btnAim) {
+            const aIcon = btnAim.querySelector('.m-btn-icon');
+            const aLabel = btnAim.querySelector('.m-btn-label');
+            if (aIcon) aIcon.innerText = '🎯';
+            if (aLabel) aLabel.innerText = 'AIM';
+          }
         }
       }
 
@@ -3614,6 +4040,7 @@
         };
 
         // 1. LOAD WORLD-CLASS PLAYER CHARACTER (Soldier.glb)
+        this.playerBones = {};
         this.gltfLoader.load('./Soldier.glb', (gltf) => {
           const soldier = gltf.scene;
           soldier.scale.set(1.15, 1.15, 1.15);
@@ -3636,8 +4063,11 @@
                 }
               }
             }
-            if (c.isBone && c.name.includes('RightHand') && !c.name.includes('Thumb') && !c.name.includes('Index')) {
-              this.playerRightHand = c;
+            if (c.isBone) {
+              this.playerBones[c.name] = c;
+              if (c.name.includes('RightHand') && !c.name.includes('Thumb') && !c.name.includes('Index')) {
+                this.playerRightHand = c;
+              }
             }
           });
 
@@ -3673,11 +4103,21 @@
         this.gltfLoader.load('./ferrari.glb', (gltf) => {
           this.ferrariTemplate = gltf.scene;
           this.vehicles.forEach((v, idx) => {
-            if (v.type !== 'police') {
+            if (v.type === 'sports' || v.type === 'muscle') {
               this.applyFerrariModel(v, idx);
             }
           });
         }, undefined, (e) => console.log('Ferrari load info:', e));
+
+        // 2b. LOAD WORLD-CLASS SUPERBIKE / MOTORCYCLE (motorcycle.glb)
+        this.gltfLoader.load('./motorcycle.glb', (gltf) => {
+          this.motorcycleTemplate = gltf.scene;
+          this.vehicles.forEach((v, idx) => {
+            if (v.type === 'motorcycle') {
+              this.applyMotorcycleModel(v, idx);
+            }
+          });
+        }, undefined, (e) => console.log('Motorcycle load info:', e));
 
         // 3. LOAD WORLD-CLASS POLICE INTERCEPTOR (police.glb)
         this.gltfLoader.load('./police.glb', (gltf) => {
@@ -3688,6 +4128,18 @@
             }
           });
         }, undefined, (e) => console.log('Police load info:', e));
+
+        // 3b. LOAD MILITARY / POLICE HELICOPTER (helicopter.glb)
+        this.gltfLoader.load('./helicopter.glb', (gltf) => {
+          this.helicopterTemplate = gltf.scene;
+          this.helicopterAnimations = gltf.animations;
+          console.log('Helicopter asset loaded successfully!');
+          this.vehicles.forEach(v => {
+            if (v.type === 'helicopter') {
+              this.applyHelicopterModel(v);
+            }
+          });
+        }, undefined, (e) => console.log('Helicopter load info:', e));
 
         // 4. LOAD WORLD-CLASS PEDESTRIAN WALK ANIMATIONS
         this.gltfLoader.load('./M_Walk_001.glb', (g) => {
@@ -3810,7 +4262,7 @@
       }
 
       applyFerrariModel(v, idx) {
-        if (!this.ferrariTemplate || v.type === 'police') return;
+        if (!this.ferrariTemplate || (v.type !== 'sports' && v.type !== 'muscle')) return;
         const carModel = this.ferrariTemplate.clone();
         // Scale 1.26 (20% increase from 1.05): Length 5.71m, Width 2.85m, Height 1.56m (commanding widebody presence)
         carModel.scale.set(1.26, 1.26, 1.26);
@@ -3839,6 +4291,41 @@
           v.mesh.remove(v.mesh.children[0]);
         }
         v.mesh.add(carModel);
+      }
+
+      applyMotorcycleModel(v, idx) {
+        if (!this.motorcycleTemplate || v.type !== 'motorcycle') return;
+        const bikeModel = this.motorcycleTemplate.clone();
+        // Scale 13.0 (30% bigger than 10.0 for commanding superbike street presence)
+        bikeModel.scale.set(13.0, 13.0, 13.0);
+        bikeModel.rotation.set(0, Math.PI / 2, 0); // Orient front along +Z
+        bikeModel.position.set(0, 0, -0.10); // Center of mass alignment
+
+        const bikeColors = [0x22c55e, 0xef4444, 0x2563eb, 0xfacc15, 0x18181b, 0xd946ef];
+        const bikeColor = v.color || bikeColors[idx % bikeColors.length];
+
+        bikeModel.traverse(c => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+            if (c.material) {
+              c.material = c.material.clone();
+              if (c.material.name && (c.material.name.includes('carpaint') || c.material.name.includes('red') || c.name.includes('body'))) {
+                c.material.color.setHex(bikeColor);
+                c.material.metalness = 0.85;
+                c.material.roughness = 0.25;
+              }
+            }
+          }
+        });
+
+        while (v.mesh.children.length > 0) {
+          v.mesh.remove(v.mesh.children[0]);
+        }
+        const innerGroup = new THREE.Group();
+        innerGroup.add(bikeModel);
+        v.mesh.add(innerGroup);
+        v.innerGroup = innerGroup;
       }
 
       applyPoliceModel(v) {
@@ -3886,6 +4373,49 @@
           v.mesh.remove(v.mesh.children[0]);
         }
         v.mesh.add(copModel);
+      }
+
+      applyHelicopterModel(v) {
+        if (!this.helicopterTemplate || v.type !== 'helicopter') return;
+        const heliModel = (typeof THREE.SkeletonUtils !== 'undefined') ? THREE.SkeletonUtils.clone(this.helicopterTemplate) : this.helicopterTemplate.clone();
+        const scale = 0.55; // Realistic AW101 dimensions (Length 11m, Rotor span 9.1m, Height 3.5m)
+        heliModel.scale.set(scale, scale, scale);
+
+        // Grounding offset: place wheels / skids squarely on the ground
+        const box = new THREE.Box3().setFromObject(heliModel);
+        heliModel.position.set(0, -box.min.y, -0.85);
+
+        heliModel.traverse(c => {
+          if (c.isMesh) {
+            c.castShadow = true;
+            c.receiveShadow = true;
+            if (c.material) {
+              c.material = c.material.clone();
+            }
+          }
+          if (c.name.includes('AW101_propellar')) v.mainRotorNode = c;
+          if (c.name.includes('AW101_backrotor')) v.tailRotorNode = c;
+        });
+
+        // Set up AnimationMixer for built-in Take 001 rotor spin clip
+        if (this.helicopterAnimations && this.helicopterAnimations.length > 0) {
+          const mixer = new THREE.AnimationMixer(heliModel);
+          const clip = this.helicopterAnimations[0];
+          const action = mixer.clipAction(clip);
+          action.play();
+          v.heliMixer = mixer;
+          v.heliAction = action;
+        }
+
+        while (v.mesh.children.length > 0) {
+          v.mesh.remove(v.mesh.children[0]);
+        }
+
+        const innerGroup = new THREE.Group();
+        innerGroup.add(heliModel);
+        v.mesh.add(innerGroup);
+        v.innerGroup = innerGroup;
+        v.glbModel = heliModel;
       }
 
       createWorldClassPedestrianConfig(idx) {
@@ -4005,12 +4535,13 @@
 
       toggleVehicleEnterExit() {
         if (this.playerMode === 'ON_FOOT') {
-          // Find nearest vehicle within 5 meters
+          // Find nearest vehicle within range (extended radius 8.5m for helicopter)
           let nearest = null;
           let minD = 5.5;
           this.vehicles.forEach(v => {
             const d = v.mesh.position.distanceTo(this.player.mesh.position);
-            if (d < minD) {
+            const reach = (v.type === 'helicopter') ? 8.5 : 5.5;
+            if (d < reach && (d < minD || nearest === null || (v.type === 'helicopter' && nearest.type !== 'helicopter' && d < 8.5))) {
               minD = d;
               nearest = v;
             }
@@ -4019,28 +4550,41 @@
           if (nearest) {
             this.playerMode = 'IN_VEHICLE';
             this.activeVehicle = nearest;
-            this.player.mesh.visible = false;
+            const isHeli = (nearest.type === 'helicopter');
+            const isBike = (nearest.type === 'motorcycle');
+
+            // For motorcycle: keep player model visible mounted in rider saddle! For helicopter/car: hide player inside cockpit
+            this.player.mesh.visible = isBike;
             document.getElementById('vehicle-speedo').style.display = 'flex';
             const isTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-            document.getElementById('prompt-box').innerText = isTouch ? 'TAP 🚪 TO EXIT VEHICLE' : '[F] EXIT VEHICLE';
+            const vName = isHeli ? 'HELICOPTER' : (isBike ? 'MOTORCYCLE' : 'VEHICLE');
+            document.getElementById('prompt-box').innerText = isTouch ? `TAP 🚪 TO EXIT ${vName}` : `[F] EXIT ${vName}`;
             document.getElementById('prompt-box').style.display = 'block';
 
             if (nearest.type === 'police') {
               audio.setSiren(true);
             }
 
-            // Start V8 Engine Sound
-            audio.startCarEngine();
+            // Start Engine Sound (Helicopter vs Motorcycle vs Car)
+            if (isHeli) {
+              audio.startHeliEngine();
+            } else {
+              audio.startCarEngine(isBike);
+            }
+
+            if (isBike) {
+              if (this.player.currentAction) this.player.currentAction.stop();
+            }
 
             // Snap camera behind vehicle immediately
-            const camHeight = nearest.type === 'police' ? 2.5 : 2.2;
-            const camDist = nearest.type === 'police' ? -7.2 : -6.2;
+            const camHeight = isHeli ? 4.8 : (isBike ? 2.15 : (nearest.type === 'police' ? 2.5 : 2.2));
+            const camDist = isHeli ? -14.0 : (isBike ? -5.6 : (nearest.type === 'police' ? -7.2 : -6.2));
             const carBack = new THREE.Vector3(0, camHeight, camDist).applyQuaternion(nearest.mesh.quaternion);
             this.camera.position.copy(nearest.mesh.position).add(carBack);
             const carFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(nearest.mesh.quaternion);
-            this.camera.lookAt(nearest.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)).addScaledVector(carFwd, 3.2));
+            this.camera.lookAt(nearest.mesh.position.clone().add(new THREE.Vector3(0, isHeli ? 1.5 : (isBike ? 1.0 : 1.2), 0)).addScaledVector(carFwd, isHeli ? 5.0 : 3.2));
 
-            // Stealing a police cruiser triggers 1 star; civilian cars can be driven freely
+            // Stealing a police cruiser triggers 1 star; civilian cars/bikes/helis can be driven freely
             if (nearest.type === 'police' && this.wantedLevel === 0) {
               this.setWantedLevel(1);
             }
@@ -4048,16 +4592,67 @@
             this.updateMobileUI();
           }
         } else {
-          // Exit vehicle
+          // Exit vehicle / dismount motorcycle / land helicopter
+          const oldV = this.activeVehicle;
+          const isHeli = oldV && oldV.type === 'helicopter';
+          const isBike = oldV && oldV.type === 'motorcycle';
+
+          if (isHeli) {
+            audio.stopHeliEngine();
+            // Ground helicopter safely on exit
+            const heliGround = this.getGroundHeight(oldV.mesh.position.x, oldV.mesh.position.z);
+            oldV.mesh.position.y = heliGround;
+            oldV.verticalSpeed = 0;
+            oldV.speed = 0;
+            oldV.isFlying = false;
+            oldV.isAutoLanding = false;
+            if (oldV.innerGroup) {
+              oldV.innerGroup.rotation.x = 0;
+              oldV.innerGroup.rotation.z = 0;
+            }
+          } else {
+            audio.stopCarEngine();
+          }
+
           this.playerMode = 'ON_FOOT';
           this.player.mesh.visible = true;
-          this.player.mesh.position.copy(this.activeVehicle.mesh.position).add(
-            new THREE.Vector3(-2.2, 0, 0).applyQuaternion(this.activeVehicle.mesh.quaternion)
+
+          const exitOffset = isHeli ? new THREE.Vector3(-3.4, 0, 0) : (isBike ? new THREE.Vector3(-1.3, 0, 0) : new THREE.Vector3(-2.2, 0, 0));
+          this.player.mesh.position.copy(oldV.mesh.position).add(
+            exitOffset.applyQuaternion(oldV.mesh.quaternion)
           );
-          if (this.activeVehicle.type === 'police') {
+          // Ground height placement so player stands on ground or rooftop safely
+          this.player.mesh.position.y = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z);
+          this.player.mesh.quaternion.set(0, 0, 0, 1);
+          this.player.mesh.rotation.y = oldV.mesh.rotation.y;
+
+          // Reset all skeletal bones from seated riding posture
+          if (this.playerBones) {
+            const b = this.playerBones;
+            ['mixamorig:Spine', 'mixamorig:Spine1', 'mixamorig:Spine2', 'mixamorig:Neck',
+             'mixamorig:LeftUpLeg', 'mixamorig:LeftLeg', 'mixamorig:LeftFoot',
+             'mixamorig:RightUpLeg', 'mixamorig:RightLeg', 'mixamorig:RightFoot',
+             'mixamorig:LeftArm', 'mixamorig:LeftForeArm', 'mixamorig:LeftHand',
+             'mixamorig:RightArm', 'mixamorig:RightForeArm', 'mixamorig:RightHand'].forEach(bName => {
+              if (b[bName]) b[bName].rotation.set(0, 0, 0);
+            });
+          }
+          if (this.player.legL) {
+            this.player.legL.rotation.set(0, 0, 0);
+            this.player.legR.rotation.set(0, 0, 0);
+            this.player.armL.rotation.set(0, 0, 0);
+            this.player.armR.rotation.set(0, 0, 0);
+            if (this.player.torso) this.player.torso.rotation.set(0, 0, 0);
+          }
+          if (this.player.actions && this.player.actions['Idle']) {
+            this.player.currentAction = this.player.actions['Idle'];
+            this.player.currentAction.reset().fadeIn(0.2).play();
+          }
+
+          if (oldV && oldV.type === 'police') {
             audio.setSiren(false);
           }
-          audio.stopCarEngine();
+
           this.activeVehicle = null;
           document.getElementById('vehicle-speedo').style.display = 'none';
           document.getElementById('prompt-box').style.display = 'none';
@@ -4082,12 +4677,46 @@
           if (this.policeCars) {
             this.policeCars.forEach(c => { c.hasDisembarked = false; });
           }
+          if (this.policeChopper) {
+            if (this.policeChopper.mesh) this.scene.remove(this.policeChopper.mesh);
+            const idx = this.vehicles.indexOf(this.policeChopper);
+            if (idx !== -1) this.vehicles.splice(idx, 1);
+            this.policeChopper = null;
+          }
         }
 
         // Spawn police squad car if wanted >= 2
         if (this.wantedLevel >= 2 && this.policeCars.length < this.wantedLevel) {
           this.spawnPoliceInterceptor();
         }
+
+        // Spawn Police Air Support Helicopter if wanted >= 3
+        if (this.wantedLevel >= 3 && !this.policeChopper) {
+          this.spawnPoliceHelicopter();
+        }
+      }
+
+      spawnPoliceHelicopter() {
+        const heli = EntityBuilder.createVehicle('helicopter', 0x0f141c);
+        const pX = this.player.mesh.position.x;
+        const pZ = this.player.mesh.position.z;
+        heli.mesh.position.set(pX + 35, 45, pZ - 30);
+        this.scene.add(heli.mesh);
+        this.vehicles.push(heli);
+        this.policeChopper = heli;
+        heli.isPoliceChopper = true;
+        heli.isFlying = true;
+
+        if (this.helicopterTemplate) {
+          this.applyHelicopterModel(heli);
+        }
+
+        // Working searchlight following player
+        const spot = new THREE.SpotLight(0xffffff, 5.0, 120, Math.PI / 7, 0.4, 1.2);
+        spot.position.set(0, -0.6, 0);
+        spot.target = this.player.mesh;
+        heli.mesh.add(spot);
+        heli.spotlight = spot;
       }
 
       spawnPoliceInterceptor() {
@@ -4264,12 +4893,20 @@
         document.getElementById('cash-val').innerText = this.playerCash.toLocaleString();
       }
 
-      resolveBuildingCollisions(pos, radius = 1.8) {
+      resolveBuildingCollisions(pos, radius = 1.8, posY = null) {
         let collided = false;
         if (!this.city || !this.city.buildings) return false;
+        const currentY = (posY !== null) ? posY : (pos.y !== undefined ? pos.y : null);
 
         for (let i = 0; i < this.city.buildings.length; i++) {
           const b = this.city.buildings[i];
+          const roof = b.roofY || b.height || 9999;
+
+          // If current altitude is on top of or above this building's roof, skip wall collision
+          if (currentY !== null && currentY >= (roof - 0.4)) {
+            continue;
+          }
+
           const halfW = (b.maxX - b.minX) * 0.5;
           const halfD = (b.maxZ - b.minZ) * 0.5;
           const midX = b.minX + halfW;
@@ -4337,8 +4974,8 @@
           // Sports (Ferrari at 1.26 scale): length 5.71m (halfL 2.85m), width 2.85m (halfW 1.425m)
           // Police (at 0.80 scale): length 5.36m (halfL 2.68m), width 1.98m (halfW 0.99m)
           // Muscle / ambient: length 4.9m (halfL 2.45m), width 2.3m (halfW 1.15m)
-          const halfW = v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15);
-          const halfL = v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50);
+          const halfW = v.type === 'motorcycle' ? 0.58 : (v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15));
+          const halfL = v.type === 'motorcycle' ? 1.50 : (v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50));
 
           // Project into vehicle local space
           const localX = dx * uRightX + dz * uRightZ;
@@ -4398,8 +5035,8 @@
         const rightLen = Math.hypot(carRight.x, carRight.z) || 1;
         const uRightX = carRight.x / rightLen, uRightZ = carRight.z / rightLen;
 
-        const halfW = v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15);
-        const halfL = v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50);
+        const halfW = v.type === 'motorcycle' ? 0.58 : (v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15));
+        const halfL = v.type === 'motorcycle' ? 1.50 : (v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50));
         const speed = Math.abs(v.speed || 0);
 
         // Check targets: Player car can hit both pedestrians and police officers.
@@ -4591,8 +5228,8 @@
             const fLen = Math.hypot(carFwd.x, carFwd.z) || 1;
             const uFx = carFwd.x / fLen, uFz = carFwd.z / fLen;
 
-            const halfW = (v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15)) + 0.65;
-            const halfL = (v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50)) + 0.65;
+            const halfW = (v.type === 'motorcycle' ? 0.58 : (v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15))) + 0.65;
+            const halfL = (v.type === 'motorcycle' ? 1.50 : (v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50))) + 0.65;
 
             const locX = dx * uRx + dz * uRz;
             const locZ = dx * uFx + dz * uFz;
@@ -4795,6 +5432,12 @@
         carFwd.y = 0;
         carFwd.normalize();
         const pos = v.mesh.position;
+        if (v.type === 'motorcycle') {
+          return [
+            { pos: pos.clone().addScaledVector(carFwd, 0.85), isFront: true, isRear: false },
+            { pos: pos.clone().addScaledVector(carFwd, -0.85), isFront: false, isRear: true }
+          ];
+        }
         const spacing = (v.type === 'police') ? 1.45 : 1.60;
         return [
           { pos: pos.clone().addScaledVector(carFwd, spacing), isFront: true, isRear: false },
@@ -4807,7 +5450,7 @@
         if (!v || !v.mesh) return;
 
         const circlesA = this.getCarCircles(v);
-        const radiusA = (v.type === 'police') ? 1.22 : 1.35;
+        const radiusA = (v.type === 'motorcycle') ? 0.65 : ((v.type === 'police') ? 1.22 : 1.35);
 
         this.vehicles.forEach(other => {
           if (other === v || !other.mesh) return;
@@ -4818,7 +5461,7 @@
           if (toOther.lengthSq() > 48) return; // > 6.9m apart
 
           const circlesB = this.getCarCircles(other);
-          const radiusB = (other.type === 'police') ? 1.22 : 1.35;
+          const radiusB = (other.type === 'motorcycle') ? 0.65 : ((other.type === 'police') ? 1.22 : 1.35);
           const radiusSum = radiusA + radiusB;
 
           // Multi-circle narrowphase: find maximum penetration
@@ -5013,40 +5656,54 @@
           if (this.player.isJumping) {
             this.player.mesh.position.y += this.player.jumpVel * delta;
             this.player.jumpVel -= 22 * delta;
-            const groundY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z);
+            const groundY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z, this.player.mesh.position.y);
             if (this.player.mesh.position.y <= groundY) {
               this.player.mesh.position.y = groundY;
               this.player.isJumping = false;
               this.player.jumpVel = 0;
             }
           } else {
-            // Step up / down dynamically between road and pavement
-            const targetY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z);
+            // Step up / down dynamically between road, pavement, and rooftops
+            const targetY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z, this.player.mesh.position.y);
             this.player.mesh.position.y = THREE.MathUtils.lerp(this.player.mesh.position.y, targetY, delta * 20);
+            if (this.player.mesh.position.y > (targetY + 1.2)) {
+              // Stepped off rooftop edge into empty air -> fall with gravity!
+              this.player.isJumping = true;
+              this.player.jumpVel = -2.0;
+            }
           }
 
           // Building collision on foot (cannot walk through walls)
-          this.resolveBuildingCollisions(this.player.mesh.position, 0.6);
+          this.resolveBuildingCollisions(this.player.mesh.position, 0.6, this.player.mesh.position.y);
 
           // Vehicle collision on foot (cannot walk through cars)
           this.resolveVehicleObstacleCollisions(this.player.mesh.position, 0.65, this.activeVehicle);
 
-          // Vehicle proximity detection for carjacking prompt
-          let nearVehicle = false;
+          // Vehicle proximity detection for carjacking / flight prompt
+          let nearestVeh = null;
+          let minVD = 5.5;
           if (this.vehicles) {
             for (let i = 0; i < this.vehicles.length; i++) {
               const veh = this.vehicles[i];
-              if (!veh.isWreck && veh.mesh && veh.mesh.position.distanceTo(this.player.mesh.position) < 5.5) {
-                nearVehicle = true;
-                break;
+              if (!veh.isWreck && veh.mesh) {
+                const reach = (veh.type === 'helicopter') ? 8.5 : 5.5;
+                const d = veh.mesh.position.distanceTo(this.player.mesh.position);
+                if (d < reach && (d < minVD || !nearestVeh || (veh.type === 'helicopter' && nearestVeh.type !== 'helicopter' && d < 8.5))) {
+                  minVD = d;
+                  nearestVeh = veh;
+                }
               }
             }
           }
           const promptBox = document.getElementById('prompt-box');
           if (promptBox) {
-            if (nearVehicle) {
+            if (nearestVeh) {
               const isTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-              promptBox.innerText = isTouch ? 'TAP 🚗 TO ENTER VEHICLE' : '[F] ENTER VEHICLE';
+              const isBike = (nearestVeh.type === 'motorcycle');
+              const isHeli = (nearestVeh.type === 'helicopter');
+              const vAction = isHeli ? 'FLY HELICOPTER' : (isBike ? 'RIDE MOTORCYCLE' : 'ENTER VEHICLE');
+              const vIcon = isHeli ? '🚁' : (isBike ? '🏍️' : '🚗');
+              promptBox.innerText = isTouch ? `TAP ${vIcon} TO ${vAction}` : `[F] ${vAction}`;
               promptBox.style.display = 'block';
             } else {
               promptBox.style.display = 'none';
@@ -5063,98 +5720,340 @@
           this.camera.lookAt(this.player.mesh.position.clone().add(new THREE.Vector3(0, 1.4, 0)));
 
         } else if (this.playerMode === 'IN_VEHICLE' && this.activeVehicle) {
-          // Vehicle Driving Physics
           const v = this.activeVehicle;
-          const maxSpeed = this.keys.shift ? 48 : 34; // Nitro boost
-          const accel = 24;
-          const steerRate = 2.2;
+          const isHeli = (v.type === 'helicopter');
+          const isBike = (v.type === 'motorcycle');
 
-          // Acceleration & Braking / Reverse
-          if (this.keys.w) v.speed = Math.min(maxSpeed, v.speed + accel * delta);
-          else if (this.keys.s) v.speed = Math.max(-16, v.speed - accel * delta);
-          else v.speed = THREE.MathUtils.lerp(v.speed, 0, delta * 2.2);
+          if (isHeli) {
+            // === HELICOPTER FLIGHT AERODYNAMICS & BUILDING COLLISION ===
+            // 1. Current surface elevation (ground/street 0.0 or building rooftop!)
+            const minGround = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z, v.mesh.position.y);
 
-          // Spacebar Handbrake / Drift
-          if (this.keys.space) {
-            v.speed = THREE.MathUtils.lerp(v.speed, 0, delta * 5.0);
-          }
+            // Collective Altitude & Landing Controls:
+            // - SPACE: Climb / Ascend
+            // - SHIFT / CTRL / C / X: Lower / Descend
+            // - S (while hovering or low speed): Lower / Land
+            // - L: Toggle Smooth Auto-Land
+            const isClimbing = this.keys.space;
+            const isDescending = this.keys.shift || this.keys.ctrl;
+            const isNearHover = Math.abs(v.speed || 0) < 7.0;
+            const isSDescending = (this.keys.s && isNearHover && v.mesh.position.y > (minGround + 0.2));
 
-          // Steering: A / Left Arrow turns LEFT (+angle), D / Right Arrow turns RIGHT (-angle)
-          const isMoving = Math.abs(v.speed) > 0.15;
-          const effectiveSteer = isMoving ? (this.keys.space ? steerRate * 1.5 : steerRate) : steerRate * 0.35;
-          const steerDir = (v.speed < -0.2) ? -1 : 1;
-          if (this.keys.a) v.mesh.rotateY(effectiveSteer * delta * steerDir);
-          if (this.keys.d) v.mesh.rotateY(-effectiveSteer * delta * steerDir);
-
-          // Move forward along vehicle heading (+Z is car front)
-          const carFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(v.mesh.quaternion);
-          v.mesh.position.addScaledVector(carFwd, v.speed * delta);
-
-          // Car chassis height on road vs sidewalk
-          const carTargetY = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z);
-          v.mesh.position.y = THREE.MathUtils.lerp(v.mesh.position.y, carTargetY, delta * 12);
-
-          // 1. CAR BUILDING COLLISION DETECTION (Prevents passing through buildings)
-          const frontPos = v.mesh.position.clone().addScaledVector(carFwd, 1.6);
-          const rearPos = v.mesh.position.clone().addScaledVector(carFwd, -1.6);
-
-          const hitCenter = this.resolveBuildingCollisions(v.mesh.position, 1.5);
-          const hitFront = this.resolveBuildingCollisions(frontPos, 1.3);
-          const hitRear = this.resolveBuildingCollisions(rearPos, 1.3);
-
-          if (hitCenter || hitFront || hitRear) {
-            const hitPos = hitFront ? frontPos : (hitRear ? rearPos : v.mesh.position);
-            const crashPwr = Math.min(1.6, Math.max(0.4, Math.abs(v.speed) / 14));
-            if (hitFront && v.speed > 0) {
-              v.speed = -v.speed * 0.35;
-              v.mesh.position.addScaledVector(carFwd, -0.6);
-            } else if (hitRear && v.speed < 0) {
-              v.speed = -v.speed * 0.35;
-              v.mesh.position.addScaledVector(carFwd, 0.6);
+            if (isClimbing) {
+              v.isAutoLanding = false;
+              v.verticalSpeed = THREE.MathUtils.lerp(v.verticalSpeed || 0, 18.0, delta * 3.5);
+            } else if (isDescending) {
+              v.isAutoLanding = false;
+              v.verticalSpeed = THREE.MathUtils.lerp(v.verticalSpeed || 0, -14.0, delta * 3.5);
+            } else if (v.isAutoLanding) {
+              // Smooth automated descent and touchdown on ground or rooftop
+              v.speed = THREE.MathUtils.lerp(v.speed || 0, 0, delta * 3.5);
+              v.verticalSpeed = THREE.MathUtils.lerp(v.verticalSpeed || 0, -8.0, delta * 2.8);
+            } else if (isSDescending) {
+              // Pressing S while hovering smoothly lowers helicopter to land
+              v.verticalSpeed = THREE.MathUtils.lerp(v.verticalSpeed || 0, -11.0, delta * 3.0);
+            } else if (this.keys.w && v.mesh.position.y < (minGround + 4.5)) {
+              // Effortless liftoff from ground OR rooftop!
+              v.verticalSpeed = THREE.MathUtils.lerp(v.verticalSpeed || 0, 10.0, delta * 3.0);
             } else {
-              v.speed = -v.speed * 0.25;
+              v.verticalSpeed = THREE.MathUtils.lerp(v.verticalSpeed || 0, 0, delta * 2.2); // Stable hover in mid-air
             }
-            v.joltPitch = hitFront ? -0.22 : 0.22;
-            const now = performance.now();
-            if (!v.lastWallHit || (now - v.lastWallHit) > 350) {
-              v.lastWallHit = now;
-              this.spawnSparks(hitPos);
-              this.spawnCarDebris(hitPos, v.color || 0xd90429);
-              audio.playCarCrashSound(crashPwr);
-              this.cameraShake = Math.min(0.65, 0.2 + crashPwr * 0.3);
-              this.triggerCrashScreenFlash(crashPwr);
-              v.health = Math.max(0, (v.health || 500) - Math.floor(crashPwr * 8 + 3));
-              if (v.health <= 0) this.explodeVehicle(v);
+
+            v.mesh.position.y += (v.verticalSpeed || 0) * delta;
+            // Solid touchdown check on rooftop or ground
+            if (v.mesh.position.y <= minGround) {
+              v.mesh.position.y = minGround;
+              v.verticalSpeed = 0;
+              v.isFlying = false;
+              v.isAutoLanding = false;
+            } else {
+              v.isFlying = (v.mesh.position.y > minGround + 0.3);
             }
+
+            // Forward/Backward Flight Speed (W / S)
+            let targetSpeed = 0;
+            if (v.isAutoLanding) {
+              targetSpeed = 0;
+            } else if (this.keys.w) {
+              targetSpeed = 42;
+            } else if (this.keys.s && !isSDescending) {
+              targetSpeed = -18;
+            }
+            v.speed = THREE.MathUtils.lerp(v.speed || 0, targetSpeed, delta * 2.0);
+
+            // Yaw / Rudder Steering (A / D)
+            const steerRate = 2.2;
+            if (!v.isAutoLanding) {
+              if (this.keys.a) v.mesh.rotateY(steerRate * delta);
+              if (this.keys.d) v.mesh.rotateY(-steerRate * delta);
+            }
+
+            // Forward Flight Translation along Heading
+            const heliFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(v.mesh.quaternion);
+            v.mesh.position.addScaledVector(heliFwd, v.speed * delta);
+
+            // === 2. HELICOPTER BUILDING COLLISION DETECTION (Prevents flying through skyscrapers!) ===
+            const heliRadius = 3.2;
+            const hitCenter = this.resolveBuildingCollisions(v.mesh.position, heliRadius, v.mesh.position.y);
+            
+            // Cockpit nose and tail boom multi-point collision checks
+            const nosePos = v.mesh.position.clone().addScaledVector(heliFwd, 3.6);
+            const hitNose = this.resolveBuildingCollisions(nosePos, 1.8, v.mesh.position.y);
+            if (hitNose) {
+              const pushback = nosePos.sub(v.mesh.position.clone().addScaledVector(heliFwd, 3.6));
+              v.mesh.position.add(pushback);
+            }
+
+            const tailPos = v.mesh.position.clone().addScaledVector(heliFwd, -4.2);
+            const hitTail = this.resolveBuildingCollisions(tailPos, 1.6, v.mesh.position.y);
+            if (hitTail) {
+              const pushback = tailPos.sub(v.mesh.position.clone().addScaledVector(heliFwd, -4.2));
+              v.mesh.position.add(pushback);
+            }
+
+            // Collision reaction: bounce back, scrape sparks, crash audio, screen shake
+            if (hitCenter || hitNose || hitTail) {
+              const impactSpeed = Math.abs(v.speed);
+              if (impactSpeed > 4.0) {
+                v.speed = -v.speed * 0.35; // Rebound off building facade
+                const hitPos = v.mesh.position.clone().addScaledVector(heliFwd, hitNose ? 3.2 : -2.0);
+                this.spawnSparks(hitPos);
+                this.spawnCarDebris(hitPos, 0x94a3b8);
+                const crashPwr = Math.min(1.5, impactSpeed / 16);
+                audio.playCarCrashSound(crashPwr);
+                this.cameraShake = Math.min(0.6, 0.2 + crashPwr * 0.3);
+                this.triggerCrashScreenFlash(crashPwr);
+              } else {
+                v.speed = THREE.MathUtils.lerp(v.speed, 0, delta * 10.0);
+              }
+            }
+
+            // Visual Pitch & Roll Banking
+            const targetPitch = v.isAutoLanding ? 0 : (-v.speed * 0.007); // Nose tilts down during forward flight
+            const targetRoll = v.isAutoLanding ? 0 : (this.keys.a ? 0.22 : (this.keys.d ? -0.22 : 0)); // Bank roll into turns
+            if (v.innerGroup) {
+              v.innerGroup.rotation.x = THREE.MathUtils.lerp(v.innerGroup.rotation.x, targetPitch, delta * 8);
+              v.innerGroup.rotation.z = THREE.MathUtils.lerp(v.innerGroup.rotation.z, targetRoll, delta * 8);
+            }
+
+            // Real-Time Helicopter Audio
+            audio.updateHeliEngine(v.mesh.position.y, Math.abs(v.speed), this.keys.space);
+
+            // HUD Speed & Altitude
+            const kmh = Math.floor(Math.abs(v.speed) * 3.6);
+            document.getElementById('speed-val').innerText = kmh;
+            const altM = Math.max(0, Math.round(v.mesh.position.y - minGround));
+            const promptBox = document.getElementById('prompt-box');
+            if (promptBox) {
+              const isTouch = ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+              const isOnRoof = (minGround > 5.0);
+              const roofTag = isOnRoof ? (v.isFlying ? ' [ROOFTOP BELOW]' : ' [LANDED ON ROOF]') : '';
+              if (isTouch) {
+                promptBox.innerText = `ALT: ${altM}m${roofTag} | ⬆️ CLIMB | ⬇️ LOWER | 🛬 LAND | 🚪 EXIT`;
+              } else {
+                if (v.isAutoLanding) {
+                  promptBox.innerText = `ALT: ${altM}m${roofTag} | 🛬 AUTOLANDING IN PROGRESS... (Press [SPACE] to cancel) | [F] EXIT`;
+                } else {
+                  promptBox.innerText = `ALT: ${altM}m${roofTag} | ⬇️ LOWER: [SHIFT]/[CTRL]/[C]/[S] | ⬆️ CLIMB: [SPACE] | 🛬 AUTO-LAND: [L] | [W/A/D] FLY | [F] EXIT`;
+                }
+              }
+              promptBox.style.display = 'block';
+            }
+
+            // Cinematic Helicopter Chase Camera
+            const camHeight = 4.8;
+            const camDist = -14.0;
+            const heliBack = new THREE.Vector3(0, camHeight, camDist).applyQuaternion(v.mesh.quaternion);
+            this.camera.position.lerp(v.mesh.position.clone().add(heliBack), delta * 7.0);
+            const lookTarget = v.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)).addScaledVector(heliFwd, 6.0);
+            this.camera.lookAt(lookTarget);
+
+          } else {
+            // Vehicle Driving Physics (Cars & Motorcycles)
+            const maxSpeed = this.keys.shift ? (isBike ? 54 : 48) : (isBike ? 38 : 34); // Agile motorcycle acceleration & top speed
+            const accel = isBike ? 34 : 24;
+            const steerRate = isBike ? 2.8 : 2.2;
+
+            // Acceleration & Braking / Reverse
+            if (this.keys.w) v.speed = Math.min(maxSpeed, v.speed + accel * delta);
+            else if (this.keys.s) v.speed = Math.max(isBike ? -10 : -16, v.speed - accel * delta);
+            else v.speed = THREE.MathUtils.lerp(v.speed, 0, delta * (isBike ? 2.8 : 2.2));
+
+            // Spacebar Handbrake / Drift
+            if (this.keys.space) {
+              v.speed = THREE.MathUtils.lerp(v.speed, 0, delta * (isBike ? 6.5 : 5.0));
+            }
+
+            // Steering: A / Left Arrow turns LEFT (+angle), D / Right Arrow turns RIGHT (-angle)
+            const isMoving = Math.abs(v.speed) > 0.15;
+            const effectiveSteer = isMoving ? (this.keys.space ? steerRate * 1.5 : steerRate) : steerRate * 0.35;
+            const steerDir = (v.speed < -0.2) ? -1 : 1;
+            let steerInput = 0;
+            if (this.keys.a) { v.mesh.rotateY(effectiveSteer * delta * steerDir); steerInput -= 1; }
+            if (this.keys.d) { v.mesh.rotateY(-effectiveSteer * delta * steerDir); steerInput += 1; }
+
+            // Dynamic Motorcycle Lean/Banking Roll into turns
+            if (isBike) {
+              const targetLean = isMoving ? -steerInput * Math.min(1.0, Math.abs(v.speed) / 14) * 0.44 : 0;
+              v.leanRoll = THREE.MathUtils.lerp(v.leanRoll || 0, targetLean, delta * 12);
+              if (v.innerGroup) {
+                v.innerGroup.rotation.z = v.leanRoll;
+              } else if (v.mesh.children[0]) {
+                v.mesh.children[0].rotation.z = v.leanRoll;
+              }
+            }
+
+            // Move forward along vehicle heading (+Z is vehicle front)
+            const carFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(v.mesh.quaternion);
+            v.mesh.position.addScaledVector(carFwd, v.speed * delta);
+
+            // Chassis height on road vs sidewalk
+            const carTargetY = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z);
+            v.mesh.position.y = THREE.MathUtils.lerp(v.mesh.position.y, carTargetY, delta * 12);
+
+            // Position Rider on Motorcycle Saddle (Sitting down on the seat, facing forward +Z with back to camera)
+            if (isBike) {
+              const saddleOffset = new THREE.Vector3(0, 0.22, -0.22).applyQuaternion(v.mesh.quaternion);
+              this.player.mesh.position.copy(v.mesh.position).add(saddleOffset);
+              this.player.mesh.quaternion.copy(v.mesh.quaternion);
+              // Player model faces -Z in neutral space; rotate 180 deg around Y so player faces forward (+Z) with back to camera!
+              this.player.mesh.rotateY(Math.PI);
+
+              if (v.leanRoll) {
+                // Tilt with motorcycle lean roll into turns
+                this.player.mesh.rotateZ(-v.leanRoll * 0.85);
+              }
+
+              // Apply true seated riding posture to bones
+              if (this.playerBones) {
+                const b = this.playerBones;
+
+                // Torso / Spine: athletic aerodynamic forward chest lean over tank
+                if (b['mixamorig:Spine']) b['mixamorig:Spine'].rotation.set(0.35, 0, 0);
+                if (b['mixamorig:Spine1']) b['mixamorig:Spine1'].rotation.set(0.25, 0, 0);
+                if (b['mixamorig:Spine2']) b['mixamorig:Spine2'].rotation.set(0.15, 0, 0);
+                if (b['mixamorig:Neck']) b['mixamorig:Neck'].rotation.set(-0.35, 0, 0); // Head looks up towards the road
+
+                // Legs: Thighs bend forward and splay outward hugging fuel tank; knees bend back to footpegs
+                // Left Leg
+                if (b['mixamorig:LeftUpLeg']) b['mixamorig:LeftUpLeg'].rotation.set(-1.45, 0.25, -0.35);
+                if (b['mixamorig:LeftLeg']) b['mixamorig:LeftLeg'].rotation.set(1.75, 0, 0);
+                if (b['mixamorig:LeftFoot']) b['mixamorig:LeftFoot'].rotation.set(-0.35, 0, 0);
+
+                // Right Leg
+                if (b['mixamorig:RightUpLeg']) b['mixamorig:RightUpLeg'].rotation.set(-1.45, -0.25, 0.35);
+                if (b['mixamorig:RightLeg']) b['mixamorig:RightLeg'].rotation.set(1.75, 0, 0);
+                if (b['mixamorig:RightFoot']) b['mixamorig:RightFoot'].rotation.set(-0.35, 0, 0);
+
+                // Arms: Reaching forward and gripping handlebars
+                if (b['mixamorig:LeftArm']) b['mixamorig:LeftArm'].rotation.set(0.85, 0.35, -0.45);
+                if (b['mixamorig:LeftForeArm']) b['mixamorig:LeftForeArm'].rotation.set(0.45, -0.35, 0.20);
+                if (b['mixamorig:LeftHand']) b['mixamorig:LeftHand'].rotation.set(0.20, 0, -0.10);
+
+                if (b['mixamorig:RightArm']) b['mixamorig:RightArm'].rotation.set(0.85, -0.35, 0.45);
+                if (b['mixamorig:RightForeArm']) b['mixamorig:RightForeArm'].rotation.set(0.45, 0.35, -0.20);
+                if (b['mixamorig:RightHand']) b['mixamorig:RightHand'].rotation.set(0.20, 0, 0.10);
+              } else if (this.player.legL) {
+                // Procedural humanoid fallback: bend legs forward and arms forward
+                this.player.legL.rotation.x = -1.35;
+                this.player.legR.rotation.x = -1.35;
+                this.player.armL.rotation.x = 0.95;
+                this.player.armR.rotation.x = 0.95;
+                if (this.player.torso) this.player.torso.rotation.x = 0.30;
+              }
+            }
+
+            // 1. CAR BUILDING COLLISION DETECTION (Prevents passing through buildings)
+            const frontPos = v.mesh.position.clone().addScaledVector(carFwd, isBike ? 1.10 : 1.6);
+            const rearPos = v.mesh.position.clone().addScaledVector(carFwd, isBike ? -1.10 : -1.6);
+
+            const hitCenter = this.resolveBuildingCollisions(v.mesh.position, isBike ? 0.80 : 1.5);
+            const hitFront = this.resolveBuildingCollisions(frontPos, isBike ? 0.68 : 1.3);
+            const hitRear = this.resolveBuildingCollisions(rearPos, isBike ? 0.68 : 1.3);
+
+            if (hitCenter || hitFront || hitRear) {
+              const hitPos = hitFront ? frontPos : (hitRear ? rearPos : v.mesh.position);
+              const crashPwr = Math.min(1.6, Math.max(0.4, Math.abs(v.speed) / 14));
+              if (hitFront && v.speed > 0) {
+                v.speed = -v.speed * 0.35;
+                v.mesh.position.addScaledVector(carFwd, -0.6);
+              } else if (hitRear && v.speed < 0) {
+                v.speed = -v.speed * 0.35;
+                v.mesh.position.addScaledVector(carFwd, 0.6);
+              } else {
+                v.speed = -v.speed * 0.25;
+              }
+              v.joltPitch = hitFront ? -0.22 : 0.22;
+              const now = performance.now();
+              if (!v.lastWallHit || (now - v.lastWallHit) > 350) {
+                v.lastWallHit = now;
+                this.spawnSparks(hitPos);
+                this.spawnCarDebris(hitPos, v.color || 0xd90429);
+                audio.playCarCrashSound(crashPwr);
+                this.cameraShake = Math.min(0.65, 0.2 + crashPwr * 0.3);
+                this.triggerCrashScreenFlash(crashPwr);
+                v.health = Math.max(0, (v.health || 350) - Math.floor(crashPwr * 8 + 3));
+                if (v.health <= 0) this.explodeVehicle(v);
+              }
+            }
+
+            // 2. CAR-TO-CAR PHYSICAL COLLISIONS (Zero ghosting, rebound, shove, spin, sparks, debris!)
+            this.checkVehicleVehicleCollisions(v);
+
+            // 3. CAR HITTING PEDESTRIANS (Vehicular manslaughter)
+            this.checkVehiclePedestrianCollisions(v);
+
+            // Update Speedo HUD
+            const mph = Math.floor(Math.abs(v.speed) * 2.2);
+            document.getElementById('speed-val').innerText = mph;
+
+            // Update Real-Time Engine & Tire Skid Audio
+            const isDrifting = this.keys.space || (isMoving && (this.keys.a || this.keys.d) && Math.abs(v.speed) > 10);
+            audio.updateCarEngine(v.speed, maxSpeed, this.keys.w, this.keys.s, isDrifting);
+
+            // Camera Follows Vehicle (Smooth third-person chase camera with lookahead)
+            const camHeight = isBike ? 2.15 : (v.type === 'police' ? 2.5 : 2.35);
+            const camDist = isBike ? -5.6 : (v.type === 'police' ? -7.2 : -6.8);
+            const carBack = new THREE.Vector3(0, camHeight, camDist).applyQuaternion(v.mesh.quaternion);
+            this.camera.position.lerp(v.mesh.position.clone().add(carBack), delta * (isBike ? 9.5 : 8.5));
+            const lookTarget = v.mesh.position.clone().add(new THREE.Vector3(0, isBike ? 1.1 : 1.2, 0)).addScaledVector(carFwd, 3.2);
+            this.camera.lookAt(lookTarget);
           }
-
-          // 2. CAR-TO-CAR PHYSICAL COLLISIONS (Zero ghosting, rebound, shove, spin, sparks, debris!)
-          this.checkVehicleVehicleCollisions(v);
-
-          // 3. CAR HITTING PEDESTRIANS (Vehicular manslaughter)
-          this.checkVehiclePedestrianCollisions(v);
-
-          // Update Speedo HUD
-          const mph = Math.floor(Math.abs(v.speed) * 2.2);
-          document.getElementById('speed-val').innerText = mph;
-
-          // Update Real-Time V8 Engine & Tire Skid Audio
-          const isDrifting = this.keys.space || (isMoving && (this.keys.a || this.keys.d) && Math.abs(v.speed) > 10);
-          audio.updateCarEngine(v.speed, maxSpeed, this.keys.w, this.keys.s, isDrifting);
-
-          // Camera Follows Car (Smooth third-person chase camera with lookahead)
-          const camHeight = v.type === 'police' ? 2.5 : 2.35;
-          const camDist = v.type === 'police' ? -7.2 : -6.8;
-          const carBack = new THREE.Vector3(0, camHeight, camDist).applyQuaternion(v.mesh.quaternion);
-          this.camera.position.lerp(v.mesh.position.clone().add(carBack), delta * 8.5);
-          const lookTarget = v.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)).addScaledVector(carFwd, 3.2);
-          this.camera.lookAt(lookTarget);
         }
       }
 
       updateVehicles(delta) {
         this.vehicles.forEach(v => {
           if (!v || !v.mesh) return;
+
+          // 0. Helicopter Rotor Animations (Idle spin on ground vs flight blur)
+          if (v.type === 'helicopter') {
+            const isFlying = (v === this.activeVehicle && v.isFlying) || Boolean(v.isPoliceChopper);
+            const rSpeed = isFlying ? 34.0 : 4.0;
+            if (v.heliMixer) {
+              if (v.heliAction) v.heliAction.timeScale = isFlying ? 3.2 : 0.8;
+              v.heliMixer.update(delta);
+            }
+            if (v.mainRotorNode) v.mainRotorNode.rotation.y += rSpeed * delta;
+            if (v.tailRotorNode) v.tailRotorNode.rotation.x += (rSpeed * 1.4) * delta;
+            if (v.mainRotor) v.mainRotor.rotation.y += rSpeed * delta;
+
+            // Police Air Support AI Orbit & Spotlight Tracking
+            if (v.isPoliceChopper && v !== this.activeVehicle) {
+              v.orbitAngle = (v.orbitAngle || 0) + delta * 0.45;
+              const pPos = (this.playerMode === 'IN_VEHICLE' && this.activeVehicle) ? this.activeVehicle.mesh.position : this.player.mesh.position;
+              const targetX = pPos.x + Math.sin(v.orbitAngle) * 42;
+              const targetZ = pPos.z + Math.cos(v.orbitAngle) * 42;
+              v.mesh.position.x = THREE.MathUtils.lerp(v.mesh.position.x, targetX, delta * 1.8);
+              v.mesh.position.z = THREE.MathUtils.lerp(v.mesh.position.z, targetZ, delta * 1.8);
+              v.mesh.position.y = THREE.MathUtils.lerp(v.mesh.position.y, 45, delta * 1.5);
+              v.mesh.lookAt(pPos.x, 45, pPos.z);
+              v.mesh.rotateY(Math.PI / 2);
+              if (v.spotlight) {
+                v.spotlight.target.position.copy(pPos);
+              }
+            }
+          }
 
           // 1. Sliding physics for shoved / spinning vehicles
           const hasSlide = Math.abs(v.vx || 0) > 0.05 || Math.abs(v.vz || 0) > 0.05;
