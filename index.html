@@ -2282,6 +2282,7 @@
           roofMaxZ: z + 16,
           height: 166.0,
           roofY: 166.0,
+          roofRadius: 14,
           type: 'mazebank',
           mesh: lobby
         });
@@ -2564,6 +2565,7 @@
         ];
 
         const buildings = [];
+        const blocks = [];
 
         // Distant Vinewood Hills & 3D Sign
         this.buildVinewoodHills(scene);
@@ -2572,6 +2574,10 @@
           for (let bz = -2; bz <= 2; bz++) {
             const centerX = bx * fullStep;
             const centerZ = bz * fullStep;
+            blocks.push({
+              minX: centerX - blockSize / 2, maxX: centerX + blockSize / 2,
+              minZ: centerZ - blockSize / 2, maxZ: centerZ + blockSize / 2
+            });
 
             // Raised Sidewalk Base with Curb (20cm realistic curb height)
             const sidewalk = new THREE.Mesh(
@@ -2642,7 +2648,7 @@
         }
 
         scene.add(cityGroup);
-        return { buildings, bounds, fullStep, streetWidth, blockSize };
+        return { buildings, blocks, bounds, fullStep, streetWidth, blockSize, groundHalfExtent: bounds * 1.4 };
       }
 
       static addCrosswalk(group, x, z, width, length, isHorizontal = false) {
@@ -3299,6 +3305,101 @@
     /* ==========================================================================
        4. MAIN GTA V CONTROLLER & GAME LOGIC
        ========================================================================== */
+    // Each effect type shares one geometry. Reusable meshes have independent
+    // materials so fading or recolouring one effect cannot change another.
+    class GTAEffectPool {
+      constructor() {
+        this.specs = {
+          blood: { geometry: () => new THREE.BoxGeometry(0.2, 0.2, 0.2), color: 0x990000, max: 96, keep: 24 },
+          explosion: { geometry: () => new THREE.SphereGeometry(4, 8, 8), color: 0xff4500, opacity: 0.9, max: 12, keep: 4 },
+          spark: { geometry: () => new THREE.BoxGeometry(0.09, 0.09, 0.09), color: 0xffcc00, max: 256, keep: 72 },
+          debris: { geometry: () => new THREE.BoxGeometry(1, 0.6, 1.2), color: 0x222222, metal: true, max: 128, keep: 28 },
+          tireSmoke: { geometry: () => new THREE.SphereGeometry(0.5, 6, 6), color: 0xd0d4dc, opacity: 0.45, max: 96, keep: 24 },
+          engineSmoke: { geometry: () => new THREE.SphereGeometry(0.35, 6, 6), color: 0x222226, opacity: 0.65, max: 48, keep: 16 },
+          rocket: { geometry: () => new THREE.CylinderGeometry(0.12, 0.12, 0.8).rotateX(Math.PI / 2), color: 0xef4444, max: 16, keep: 4 },
+          tracer: { geometry: () => new THREE.BoxGeometry(0.08, 0.08, 0.65), color: 0xffe066, max: 64, keep: 16 }
+        };
+        this.pools = new Map();
+        this.nextTrim = 0;
+      }
+
+      acquire(kind, color) {
+        const spec = this.specs[kind];
+        if (!spec) return null;
+        let pool = this.pools.get(kind);
+        if (!pool) {
+          pool = { geometry: null, free: [], active: new Set(), lastUsed: 0 };
+          this.pools.set(kind, pool);
+        }
+        if (pool.active.size >= spec.max) return null;
+        let mesh = pool.free.pop();
+        if (!mesh) {
+          if (!pool.geometry) pool.geometry = spec.geometry();
+          const options = { color: spec.color };
+          if (spec.opacity !== undefined) {
+            options.transparent = true;
+            options.opacity = spec.opacity;
+            options.depthWrite = false;
+          }
+          const material = spec.metal
+            ? new THREE.MeshStandardMaterial({ ...options, metalness: 0.85, roughness: 0.25 })
+            : new THREE.MeshBasicMaterial(options);
+          mesh = new THREE.Mesh(pool.geometry, material);
+          mesh.userData.effectKind = kind;
+        }
+        mesh.position.set(0, 0, 0);
+        mesh.quaternion.set(0, 0, 0, 1);
+        mesh.scale.set(1, 1, 1);
+        mesh.visible = true;
+        mesh.material.color.setHex(color === undefined ? spec.color : color);
+        mesh.material.opacity = spec.opacity === undefined ? 1 : spec.opacity;
+        pool.active.add(mesh);
+        pool.lastUsed = performance.now();
+        return mesh;
+      }
+
+      release(mesh) {
+        const kind = mesh.userData.effectKind;
+        const pool = this.pools.get(kind);
+        if (!pool || !pool.active.delete(mesh)) return;
+        if (mesh.parent) mesh.parent.remove(mesh);
+        mesh.visible = false;
+        pool.lastUsed = performance.now();
+        if (pool.free.length < this.specs[kind].keep) {
+          pool.free.push(mesh);
+        } else {
+          mesh.material.dispose();
+        }
+      }
+
+      trim(now = performance.now()) {
+        if (now < this.nextTrim) return;
+        this.nextTrim = now + 1000;
+        this.pools.forEach(pool => {
+          if (now - pool.lastUsed < 15000) return;
+          pool.free.forEach(mesh => mesh.material.dispose());
+          pool.free.length = 0;
+          if (pool.active.size === 0 && pool.geometry) {
+            pool.geometry.dispose();
+            pool.geometry = null;
+          }
+        });
+      }
+
+      dispose() {
+        this.pools.forEach(pool => {
+          pool.active.forEach(mesh => {
+            if (mesh.parent) mesh.parent.remove(mesh);
+            mesh.material.dispose();
+          });
+          pool.free.forEach(mesh => mesh.material.dispose());
+          if (pool.geometry) pool.geometry.dispose();
+        });
+        this.pools.clear();
+        this.nextTrim = 0;
+      }
+    }
+
     class GTALosSantos {
       constructor() {
         this.container = document.getElementById('game-canvas-container');
@@ -3341,6 +3442,8 @@
 
         // Init Engine
         this.initThree();
+        this.effects = new GTAEffectPool();
+        window.addEventListener('pagehide', () => this.clearTransientEffects());
         this.city = CityBuilder.buildCity(this.scene);
         this.initPlayer();
         this.populateCityVehicles();
@@ -3427,6 +3530,12 @@
             const rMaxX = (b.roofMaxX !== undefined) ? b.roofMaxX : b.maxX;
             const rMinZ = (b.roofMinZ !== undefined) ? b.roofMinZ : b.minZ;
             const rMaxZ = (b.roofMaxZ !== undefined) ? b.roofMaxZ : b.maxZ;
+
+            if (b.roofRadius) {
+              const roofX = (b.minX + b.maxX) / 2;
+              const roofZ = (b.minZ + b.maxZ) / 2;
+              if (Math.hypot(x - roofX, z - roofZ) > b.roofRadius + 1.2) continue;
+            }
 
             // Margin allows solid landing even near roof boundaries
             if (x >= (rMinX - 1.2) && x <= (rMaxX + 1.2) && z >= (rMinZ - 1.2) && z <= (rMaxZ + 1.2)) {
@@ -4010,6 +4119,107 @@
       setupRadar() {
         this.radarCanvas = document.getElementById('radar-canvas');
         this.radarCtx = this.radarCanvas.getContext('2d');
+        this.radarForward = new THREE.Vector3();
+        this.radarMap = document.createElement('canvas');
+        this.radarMap.width = this.radarMap.height = 1024;
+        this.radarWorldSize = this.city.groundHalfExtent * 2;
+        const mapScale = this.radarMap.width / this.radarWorldSize;
+        const ctx = this.radarMap.getContext('2d');
+        ctx.fillStyle = '#26313b';
+        ctx.fillRect(0, 0, this.radarMap.width, this.radarMap.height);
+        ctx.translate(this.radarMap.width / 2, this.radarMap.height / 2);
+        ctx.scale(mapScale, mapScale);
+
+        // Cache the same sidewalks and building footprints used by the world.
+        ctx.fillStyle = '#64717a';
+        this.city.blocks.forEach(block => {
+          ctx.fillRect(block.minX, block.minZ, block.maxX - block.minX, block.maxZ - block.minZ);
+        });
+        ctx.fillStyle = '#39434c';
+        ctx.strokeStyle = '#85919b';
+        ctx.lineWidth = 0.8;
+        this.city.buildings.forEach(b => {
+          ctx.beginPath();
+          if (b.type === 'mazebank') {
+            ctx.arc((b.minX + b.maxX) / 2, (b.minZ + b.maxZ) / 2, (b.maxX - b.minX) / 2, 0, Math.PI * 2);
+          } else {
+            ctx.rect(b.minX, b.minZ, b.maxX - b.minX, b.maxZ - b.minZ);
+          }
+          ctx.fill();
+          ctx.stroke();
+        });
+        ctx.strokeStyle = '#85919b';
+        ctx.setLineDash([3, 5]);
+        const roadEnd = this.city.bounds + this.city.streetWidth / 2;
+        for (let road = -this.city.bounds; road <= this.city.bounds; road += this.city.fullStep) {
+          ctx.beginPath();
+          ctx.moveTo(road, -roadEnd);
+          ctx.lineTo(road, roadEnd);
+          ctx.moveTo(-roadEnd, road);
+          ctx.lineTo(roadEnd, road);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+      }
+
+      clearTransientEffects() {
+        this.particles.length = 0;
+        this.projectiles.length = 0;
+        this.effects.dispose();
+      }
+
+      disposeObject3D(root) {
+        if (!root) return;
+        if (root.parent) root.parent.remove(root);
+        const resources = () => ({ geometries: new Set(), materials: new Set(), textures: new Set(), skeletons: new Set() });
+        const collect = (object, out) => {
+          if (!object) return;
+          object.traverse(node => {
+            if (node.geometry) out.geometries.add(node.geometry);
+            if (node.skeleton) out.skeletons.add(node.skeleton);
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            materials.forEach(material => {
+              if (!material) return;
+              out.materials.add(material);
+              Object.values(material).forEach(value => {
+                if (value && value.isTexture) out.textures.add(value);
+              });
+            });
+          });
+        };
+        const removed = resources();
+        const retained = resources();
+        collect(root, removed);
+        collect(this.scene, retained);
+        // GLB clones borrow geometry and textures from templates. Never dispose
+        // resources still used by a live object or cached model.
+        [this.ferrariTemplate, this.motorcycleTemplate, this.policeTemplate,
+          this.helicopterTemplate, this.policeOfficerTemplate,
+          ...Object.values(this.pedTemplates || {})].forEach(template => collect(template, retained));
+        [this.scene.background, this.scene.environment].forEach(texture => {
+          if (texture && texture.isTexture) retained.textures.add(texture);
+        });
+        Object.keys(removed).forEach(kind => {
+          removed[kind].forEach(resource => {
+            if (!retained[kind].has(resource) && typeof resource.dispose === 'function') resource.dispose();
+          });
+        });
+      }
+
+      disposeChildren(group) {
+        const removed = new THREE.Group();
+        while (group.children.length) removed.add(group.children[0]);
+        this.disposeObject3D(removed);
+      }
+
+      disposeEntityMesh(entity) {
+        if (!entity || !entity.mesh) return;
+        [entity.mixer, entity.heliMixer].forEach(mixer => {
+          if (!mixer) return;
+          mixer.stopAllAction();
+          mixer.uncacheRoot(mixer.getRoot());
+        });
+        this.disposeObject3D(entity.mesh);
       }
 
       loadWorldClassAssets() {
@@ -4072,9 +4282,7 @@
           });
 
           // Replace placeholder body meshes with high-poly rigged model
-          while (this.player.mesh.children.length > 0) {
-            this.player.mesh.remove(this.player.mesh.children[0]);
-          }
+          this.disposeChildren(this.player.mesh);
           this.player.mesh.add(soldier);
 
           // Setup Player Animations (Idle, Walk, Run)
@@ -4251,7 +4459,7 @@
       updatePlayerWeaponModel() {
         if (!this.playerRightHand) return;
         if (this.currentWeaponMesh) {
-          this.playerRightHand.remove(this.currentWeaponMesh);
+          this.disposeObject3D(this.currentWeaponMesh);
           this.currentWeaponMesh = null;
         }
         const wType = this.weaponIndex === 1 ? 'pistol' : (this.weaponIndex === 2 ? 'smg' : (this.weaponIndex === 3 ? 'rpg' : 'none'));
@@ -4287,9 +4495,7 @@
           }
         });
 
-        while (v.mesh.children.length > 0) {
-          v.mesh.remove(v.mesh.children[0]);
-        }
+        this.disposeChildren(v.mesh);
         v.mesh.add(carModel);
       }
 
@@ -4319,9 +4525,7 @@
           }
         });
 
-        while (v.mesh.children.length > 0) {
-          v.mesh.remove(v.mesh.children[0]);
-        }
+        this.disposeChildren(v.mesh);
         const innerGroup = new THREE.Group();
         innerGroup.add(bikeModel);
         v.mesh.add(innerGroup);
@@ -4369,9 +4573,7 @@
         copModel.add(redLight, blueLight, redPoint, bluePoint);
         v.policeLights = { red: redLight, blue: blueLight, redPoint: redPoint, bluePoint: bluePoint };
 
-        while (v.mesh.children.length > 0) {
-          v.mesh.remove(v.mesh.children[0]);
-        }
+        this.disposeChildren(v.mesh);
         v.mesh.add(copModel);
       }
 
@@ -4407,9 +4609,7 @@
           v.heliAction = action;
         }
 
-        while (v.mesh.children.length > 0) {
-          v.mesh.remove(v.mesh.children[0]);
-        }
+        this.disposeChildren(v.mesh);
 
         const innerGroup = new THREE.Group();
         innerGroup.add(heliModel);
@@ -4503,9 +4703,7 @@
         });
 
         // Cleanly replace old/placeholder meshes
-        while (ped.mesh.children.length > 0) {
-          ped.mesh.remove(ped.mesh.children[0]);
-        }
+        this.disposeChildren(ped.mesh);
         ped.mesh.add(pedModel);
 
         // Setup fluid motion-capture walking animation
@@ -4533,12 +4731,56 @@
         this.radioTimer = setTimeout(() => { p.style.opacity = '0'; }, 1800);
       }
 
+      getVehicleExitPosition(vehicle) {
+        const origin = vehicle.mesh.position;
+        const surfaceY = this.getGroundHeight(origin.x, origin.z, origin.y);
+        const radius = 0.7;
+        const side = vehicle.type === 'helicopter' ? 3.4 : (vehicle.type === 'motorcycle' ? 1.4 : 2.3);
+        const end = vehicle.type === 'helicopter' ? 6.5 : (vehicle.type === 'motorcycle' ? 2.4 : 3.7);
+        const offsets = [
+          [-side, 0], [side, 0], [-side, -2], [side, -2],
+          [-side, 2], [side, 2], [0, -end], [0, end]
+        ];
+        const yaw = vehicle.mesh.rotation.y;
+        for (const [x, z] of offsets) {
+          const candidate = new THREE.Vector3(
+            origin.x + x * Math.cos(yaw) + z * Math.sin(yaw), origin.y,
+            origin.z - x * Math.sin(yaw) + z * Math.cos(yaw)
+          );
+          candidate.y = this.getGroundHeight(candidate.x, candidate.z, origin.y);
+          // Do not teleport to the street or to a different storey at a roof edge.
+          if (Math.abs(candidate.y - surfaceY) > 0.6) continue;
+          if (candidate.y > 4) {
+            const supported = this.city.buildings.some(b => {
+              if (Math.abs(b.roofY - candidate.y) > 0.1) return false;
+              if (b.roofRadius) {
+                return Math.hypot(candidate.x - (b.minX + b.maxX) / 2,
+                  candidate.z - (b.minZ + b.maxZ) / 2) <= b.roofRadius - radius;
+              }
+              const minX = b.roofMinX === undefined ? b.minX : b.roofMinX;
+              const maxX = b.roofMaxX === undefined ? b.maxX : b.roofMaxX;
+              const minZ = b.roofMinZ === undefined ? b.minZ : b.roofMinZ;
+              const maxZ = b.roofMaxZ === undefined ? b.maxZ : b.roofMaxZ;
+              return candidate.x >= minX + radius && candidate.x <= maxX - radius
+                && candidate.z >= minZ + radius && candidate.z <= maxZ - radius;
+            });
+            if (!supported) continue;
+          }
+          const probe = candidate.clone();
+          if (this.resolveBuildingCollisions(probe, radius, candidate.y)) continue;
+          if (this.resolveVehicleObstacleCollisions(probe, radius)) continue;
+          return candidate;
+        }
+        return null;
+      }
+
       toggleVehicleEnterExit() {
         if (this.playerMode === 'ON_FOOT') {
           // Find nearest vehicle within range (extended radius 8.5m for helicopter)
           let nearest = null;
           let minD = 5.5;
           this.vehicles.forEach(v => {
+            if (!v || !v.mesh || v.isWreck || v.isDrivable === false) return;
             const d = v.mesh.position.distanceTo(this.player.mesh.position);
             const reach = (v.type === 'helicopter') ? 8.5 : 5.5;
             if (d < reach && (d < minD || nearest === null || (v.type === 'helicopter' && nearest.type !== 'helicopter' && d < 8.5))) {
@@ -4594,16 +4836,29 @@
         } else {
           // Exit vehicle / dismount motorcycle / land helicopter
           const oldV = this.activeVehicle;
+          if (!oldV || !oldV.mesh) return;
           const isHeli = oldV && oldV.type === 'helicopter';
           const isBike = oldV && oldV.type === 'motorcycle';
+          const surfaceY = this.getGroundHeight(oldV.mesh.position.x, oldV.mesh.position.z, oldV.mesh.position.y);
+          if (isHeli && !oldV.isWreck &&
+              (oldV.mesh.position.y > surfaceY + 0.75 || Math.abs(oldV.verticalSpeed || 0) > 1.5)) {
+            oldV.isAutoLanding = true;
+            this.showRadioPopup('AUTO-LANDING — EXIT AFTER TOUCHDOWN');
+            return;
+          }
+          const exitPosition = this.getVehicleExitPosition(oldV);
+          if (!exitPosition) {
+            this.showRadioPopup('EXIT BLOCKED — MOVE TO A CLEAR AREA');
+            return;
+          }
 
           if (isHeli) {
             audio.stopHeliEngine();
-            // Ground helicopter safely on exit
-            const heliGround = this.getGroundHeight(oldV.mesh.position.x, oldV.mesh.position.z);
-            oldV.mesh.position.y = heliGround;
+            // Keep a landed helicopter on its current roof or ground surface.
+            oldV.mesh.position.y = surfaceY;
             oldV.verticalSpeed = 0;
             oldV.speed = 0;
+            oldV.vx = oldV.vz = oldV.vRot = 0;
             oldV.isFlying = false;
             oldV.isAutoLanding = false;
             if (oldV.innerGroup) {
@@ -4617,14 +4872,13 @@
           this.playerMode = 'ON_FOOT';
           this.player.mesh.visible = true;
 
-          const exitOffset = isHeli ? new THREE.Vector3(-3.4, 0, 0) : (isBike ? new THREE.Vector3(-1.3, 0, 0) : new THREE.Vector3(-2.2, 0, 0));
-          this.player.mesh.position.copy(oldV.mesh.position).add(
-            exitOffset.applyQuaternion(oldV.mesh.quaternion)
-          );
-          // Ground height placement so player stands on ground or rooftop safely
-          this.player.mesh.position.y = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z);
+          this.player.mesh.position.copy(exitPosition);
+          this.player.isJumping = false;
+          this.player.jumpVel = 0;
+          this.playerVelocity.set(0, 0, 0);
           this.player.mesh.quaternion.set(0, 0, 0, 1);
-          this.player.mesh.rotation.y = oldV.mesh.rotation.y;
+          this.player.mesh.rotation.y = oldV.mesh.rotation.y + Math.PI;
+          this.mouseYaw = this.player.mesh.rotation.y;
 
           // Reset all skeletal bones from seated riding posture
           if (this.playerBones) {
@@ -4671,14 +4925,14 @@
 
         if (this.wantedLevel === 0) {
           if (this.policeOfficers) {
-            this.policeOfficers.forEach(o => { if (o && o.mesh) this.scene.remove(o.mesh); });
+            this.policeOfficers.forEach(o => this.disposeEntityMesh(o));
             this.policeOfficers = [];
           }
           if (this.policeCars) {
             this.policeCars.forEach(c => { c.hasDisembarked = false; });
           }
           if (this.policeChopper) {
-            if (this.policeChopper.mesh) this.scene.remove(this.policeChopper.mesh);
+            this.disposeEntityMesh(this.policeChopper);
             const idx = this.vehicles.indexOf(this.policeChopper);
             if (idx !== -1) this.vehicles.splice(idx, 1);
             this.policeChopper = null;
@@ -4837,9 +5091,8 @@
         const camDir = new THREE.Vector3();
         this.camera.getWorldDirection(camDir);
 
-        const rocketGeom = new THREE.CylinderGeometry(0.12, 0.12, 0.8);
-        rocketGeom.rotateX(Math.PI / 2);
-        const rocket = new THREE.Mesh(rocketGeom, new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+        const rocket = this.effects.acquire('rocket');
+        if (!rocket) return;
         rocket.position.copy(this.player.mesh.position).add(new THREE.Vector3(0, 1.4, 0));
         rocket.quaternion.setFromRotationMatrix(
           new THREE.Matrix4().lookAt(rocket.position, rocket.position.clone().add(camDir), new THREE.Vector3(0, 1, 0))
@@ -4955,6 +5208,8 @@
         for (let i = 0; i < this.vehicles.length; i++) {
           const v = this.vehicles[i];
           if (!v || !v.mesh || v === excludeVehicle) continue;
+          const vehicleHeight = v.type === 'helicopter' ? 3.8 : 2.0;
+          if (pos.y + 1.8 < v.mesh.position.y || pos.y > v.mesh.position.y + vehicleHeight) continue;
 
           // Quick distance cull (radius of car ~3.8m + radius)
           const dx = pos.x - v.mesh.position.x;
@@ -4974,8 +5229,8 @@
           // Sports (Ferrari at 1.26 scale): length 5.71m (halfL 2.85m), width 2.85m (halfW 1.425m)
           // Police (at 0.80 scale): length 5.36m (halfL 2.68m), width 1.98m (halfW 0.99m)
           // Muscle / ambient: length 4.9m (halfL 2.45m), width 2.3m (halfW 1.15m)
-          const halfW = v.type === 'motorcycle' ? 0.58 : (v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15));
-          const halfL = v.type === 'motorcycle' ? 1.50 : (v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50));
+          const halfW = v.type === 'helicopter' ? 2.2 : (v.type === 'motorcycle' ? 0.58 : (v.type === 'sports' ? 1.45 : (v.type === 'police' ? 1.05 : 1.15)));
+          const halfL = v.type === 'helicopter' ? 5.5 : (v.type === 'motorcycle' ? 1.50 : (v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50)));
 
           // Project into vehicle local space
           const localX = dx * uRightX + dz * uRightZ;
@@ -5141,10 +5396,8 @@
 
       spawnBloodEffect(pos) {
         for (let i = 0; i < 6; i++) {
-          const blood = new THREE.Mesh(
-            new THREE.BoxGeometry(0.2, 0.2, 0.2),
-            new THREE.MeshBasicMaterial({ color: 0x990000 })
-          );
+          const blood = this.effects.acquire('blood');
+          if (!blood) break;
           blood.position.copy(pos).add(new THREE.Vector3(
             (Math.random() - 0.5) * 0.6,
             0.6 + Math.random() * 0.5,
@@ -5272,10 +5525,8 @@
       }
 
       spawnExplosionEffect(pos) {
-        const fireball = new THREE.Mesh(
-          new THREE.SphereGeometry(4, 8, 8),
-          new THREE.MeshBasicMaterial({ color: 0xff4500, transparent: true, opacity: 0.9 })
-        );
+        const fireball = this.effects.acquire('explosion');
+        if (!fireball) return;
         fireball.position.copy(pos).add(new THREE.Vector3(0, 1.5, 0));
         this.scene.add(fireball);
 
@@ -5291,11 +5542,9 @@
         const baseNorm = normal ? normal.clone().normalize() : new THREE.Vector3(0, 1, 0);
         const sparkCount = 18;
         for (let i = 0; i < sparkCount; i++) {
-          const sparkGeom = new THREE.BoxGeometry(0.09, 0.09, 0.09);
-          const sparkMat = new THREE.MeshBasicMaterial({
-            color: Math.random() > 0.35 ? 0xffcc00 : (Math.random() > 0.5 ? 0xff4400 : 0xffffff)
-          });
-          const spark = new THREE.Mesh(sparkGeom, sparkMat);
+          const color = Math.random() > 0.35 ? 0xffcc00 : (Math.random() > 0.5 ? 0xff4400 : 0xffffff);
+          const spark = this.effects.acquire('spark', color);
+          if (!spark) break;
           spark.position.copy(pos).add(new THREE.Vector3(
             (Math.random() - 0.5) * 0.3,
             0.1 + Math.random() * 0.3,
@@ -5326,14 +5575,9 @@
         for (let i = 0; i < 14; i++) {
           const shardColor = colors[i % colors.length];
           const sz = 0.10 + Math.random() * 0.14;
-          const part = new THREE.Mesh(
-            new THREE.BoxGeometry(sz, sz * 0.6, sz * 1.2),
-            new THREE.MeshStandardMaterial({
-              color: shardColor,
-              metalness: 0.85,
-              roughness: 0.25
-            })
-          );
+          const part = this.effects.acquire('debris', shardColor);
+          if (!part) break;
+          part.scale.setScalar(sz);
           part.position.copy(pos).add(new THREE.Vector3(
             (Math.random() - 0.5) * 0.6,
             0.4 + Math.random() * 0.5,
@@ -5354,7 +5598,7 @@
               (Math.random() - 0.5) * 15
             ),
             gravity: 13,
-            scaleRate: -0.12,
+            scaleRate: -0.12 * sz,
             life: 0.75 + Math.random() * 0.4,
             maxLife: 1.15
           });
@@ -5363,14 +5607,8 @@
 
       spawnTireSmoke(pos) {
         for (let i = 0; i < 4; i++) {
-          const smoke = new THREE.Mesh(
-            new THREE.SphereGeometry(0.5, 6, 6),
-            new THREE.MeshBasicMaterial({
-              color: 0xd0d4dc,
-              transparent: true,
-              opacity: 0.45
-            })
-          );
+          const smoke = this.effects.acquire('tireSmoke');
+          if (!smoke) break;
           smoke.position.copy(pos).add(new THREE.Vector3(
             (Math.random() - 0.5) * 0.8,
             0.2 + Math.random() * 0.2,
@@ -5389,14 +5627,8 @@
       }
 
       spawnEngineSmoke(pos) {
-        const smoke = new THREE.Mesh(
-          new THREE.SphereGeometry(0.35, 6, 6),
-          new THREE.MeshBasicMaterial({
-            color: 0x222226,
-            transparent: true,
-            opacity: 0.65
-          })
-        );
+        const smoke = this.effects.acquire('engineSmoke');
+        if (!smoke) return;
         smoke.position.copy(pos).add(new THREE.Vector3(
           (Math.random() - 0.5) * 0.3,
           0,
@@ -5908,7 +6140,7 @@
             v.mesh.position.addScaledVector(carFwd, v.speed * delta);
 
             // Chassis height on road vs sidewalk
-            const carTargetY = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z);
+            const carTargetY = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z, v.mesh.position.y);
             v.mesh.position.y = THREE.MathUtils.lerp(v.mesh.position.y, carTargetY, delta * 12);
 
             // Position Rider on Motorcycle Saddle (Sitting down on the seat, facing forward +Z with back to camera)
@@ -6066,7 +6298,7 @@
               v.mesh.rotation.y += (v.vRot || 0) * delta;
 
               // Road ground height
-              v.mesh.position.y = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z);
+              v.mesh.position.y = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z, v.mesh.position.y);
 
               // Building collision resolution
               this.resolveBuildingCollisions(v.mesh.position, 1.4);
@@ -6468,7 +6700,7 @@
               off.aimWeight = THREE.MathUtils.lerp(off.aimWeight || 0, 0.0, delta * 6.0);
             } else {
               // Re-embark
-              this.scene.remove(off.mesh);
+              this.disposeEntityMesh(off);
               this.policeOfficers.splice(i, 1);
               off.copCar.hasDisembarked = false;
               continue;
@@ -6650,20 +6882,19 @@
               targetAim.z += (Math.random() - 0.5) * 0.35;
 
               const aimDir = targetAim.sub(muzzleWorldPos).normalize();
-              const tracer = new THREE.Mesh(
-                new THREE.BoxGeometry(0.08, 0.08, 0.65),
-                new THREE.MeshBasicMaterial({ color: 0xffe066 })
-              );
-              tracer.position.copy(muzzleWorldPos);
-              tracer.quaternion.setFromRotationMatrix(
-                new THREE.Matrix4().lookAt(muzzleWorldPos, muzzleWorldPos.clone().add(aimDir), new THREE.Vector3(0, 1, 0))
-              );
-              this.scene.add(tracer);
-              this.projectiles.push({
-                mesh: tracer,
-                velocity: aimDir.multiplyScalar(70),
-                life: 0.5
-              });
+              const tracer = this.effects.acquire('tracer');
+              if (tracer) {
+                tracer.position.copy(muzzleWorldPos);
+                tracer.quaternion.setFromRotationMatrix(
+                  new THREE.Matrix4().lookAt(muzzleWorldPos, muzzleWorldPos.clone().add(aimDir), new THREE.Vector3(0, 1, 0))
+                );
+                this.scene.add(tracer);
+                this.projectiles.push({
+                  mesh: tracer,
+                  velocity: aimDir.multiplyScalar(70),
+                  life: 0.5
+                });
+              }
 
               // Player takes bullet damage
               this.takeDamage(5 + Math.floor(Math.random() * 6));
@@ -6932,6 +7163,7 @@
 
         setTimeout(() => {
           // Respawn at Hospital
+          this.clearTransientEffects();
           this.playerHealth = 100;
           this.playerArmor = 100;
           this.playerCash = Math.max(0, this.playerCash - 5000);
@@ -6964,6 +7196,7 @@
 
         setTimeout(() => {
           // Respawn outside Police Station
+          this.clearTransientEffects();
           this.playerHealth = 100;
           this.playerArmor = 50;
           this.playerCash = Math.max(0, this.playerCash - 500);
@@ -6993,7 +7226,7 @@
           p.mesh.position.addScaledVector(p.velocity, delta);
 
           if (p.life <= 0) {
-            this.scene.remove(p.mesh);
+            this.effects.release(p.mesh);
             this.projectiles.splice(i, 1);
           }
         }
@@ -7029,10 +7262,11 @@
           }
 
           if (pt.life <= 0) {
-            this.scene.remove(pt.mesh);
+            this.effects.release(pt.mesh);
             this.particles.splice(i, 1);
           }
         }
+        this.effects.trim();
       }
 
       drawRadar() {
@@ -7045,34 +7279,28 @@
         const cy = h / 2;
         const scale = 0.65;
 
-        const playerPos = this.playerMode === 'IN_VEHICLE'
+        const inVehicle = this.playerMode === 'IN_VEHICLE' && this.activeVehicle;
+        const playerPos = inVehicle
           ? this.activeVehicle.mesh.position
           : this.player.mesh.position;
 
-        // Street Grid Lines relative to player
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.lineWidth = 2;
-        for (let x = -180; x <= 180; x += 45) {
-          const rx = cx + (x - playerPos.x) * scale;
-          ctx.beginPath();
-          ctx.moveTo(rx, 0);
-          ctx.lineTo(rx, h);
-          ctx.stroke();
-        }
-        for (let z = -180; z <= 180; z += 45) {
-          const rz = cy + (z - playerPos.z) * scale;
-          ctx.beginPath();
-          ctx.moveTo(0, rz);
-          ctx.lineTo(w, rz);
-          ctx.stroke();
-        }
+        // North-up map; scenery and markers use exactly the same world transform.
+        ctx.fillStyle = '#141e27';
+        ctx.fillRect(0, 0, w, h);
+        const halfWorld = this.radarWorldSize / 2;
+        ctx.drawImage(this.radarMap,
+          cx + (-halfWorld - playerPos.x) * scale,
+          cy + (-halfWorld - playerPos.z) * scale,
+          this.radarWorldSize * scale, this.radarWorldSize * scale);
 
         // Vehicles blips
         this.vehicles.forEach(v => {
-          if (v === this.activeVehicle) return;
+          if (v === this.activeVehicle || !v.mesh || v.isWreck || v.isDrivable === false) return;
           const vx = cx + (v.mesh.position.x - playerPos.x) * scale;
           const vz = cy + (v.mesh.position.z - playerPos.z) * scale;
-          ctx.fillStyle = v.type === 'police' ? '#ef4444' : '#ffffff';
+          if (vx < -4 || vx > w + 4 || vz < -4 || vz > h + 4) return;
+          ctx.fillStyle = (v.type === 'police' || v.isPoliceChopper) ? '#ef4444'
+            : (v.type === 'helicopter' ? '#facc15' : '#ffffff');
           ctx.beginPath();
           ctx.arc(vx, vz, 3.5, 0, Math.PI * 2);
           ctx.fill();
@@ -7091,10 +7319,12 @@
           });
         }
 
-        // Player Arrow (Cyan in Center)
+        // Characters face -Z; vehicles face +Z. Follow the actual entity heading.
+        const trackedMesh = inVehicle ? this.activeVehicle.mesh : this.player.mesh;
+        this.radarForward.set(0, 0, inVehicle ? 1 : -1).applyQuaternion(trackedMesh.quaternion);
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(-this.mouseYaw);
+        ctx.rotate(Math.atan2(this.radarForward.x, -this.radarForward.z));
         ctx.fillStyle = '#38bdf8';
         ctx.beginPath();
         ctx.moveTo(0, -7);
@@ -7103,6 +7333,10 @@
         ctx.closePath();
         ctx.fill();
         ctx.restore();
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('N', cx, 14);
       }
 
       updatePoliceLightStrobes() {
