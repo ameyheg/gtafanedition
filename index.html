@@ -387,6 +387,50 @@
       text-transform: uppercase;
     }
 
+    /* BUSTED SCREEN */
+    #busted-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 100;
+      background: rgba(8, 24, 48, 0.65);
+      backdrop-filter: grayscale(0.8) contrast(1.15);
+      -webkit-backdrop-filter: grayscale(0.8) contrast(1.15);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.8s ease;
+    }
+
+    #busted-screen.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .busted-text {
+      font-size: 100px;
+      font-weight: 900;
+      letter-spacing: 8px;
+      color: #38bdf8;
+      text-transform: uppercase;
+      text-shadow: 0 0 35px rgba(56, 189, 248, 0.8), 0 4px 10px #000;
+      font-family: 'Oswald', sans-serif;
+      animation: wastedZoom 3.5s ease-out forwards;
+    }
+
+    .busted-sub {
+      font-size: 18px;
+      letter-spacing: 4px;
+      color: #facc15;
+      margin-top: 10px;
+      text-transform: uppercase;
+    }
+
     /* Start / Pause Modal */
     #start-modal {
       position: absolute;
@@ -875,6 +919,12 @@
   <div id="wasted-screen">
     <div class="wasted-text">WASTED</div>
     <div class="wasted-sub">HOSPITAL MEDICAL BILL: $5,000</div>
+  </div>
+
+  <!-- BUSTED SCREEN -->
+  <div id="busted-screen">
+    <div class="busted-text">BUSTED</div>
+    <div class="busted-sub">POLICE PRECINCT BAIL &amp; FINE: $500</div>
   </div>
 
   <!-- START MENU -->
@@ -4352,16 +4402,23 @@
         const halfL = v.type === 'sports' ? 2.85 : (v.type === 'police' ? 2.70 : 2.50);
         const speed = Math.abs(v.speed || 0);
 
-        this.pedestrians.forEach(ped => {
+        // Check targets: Player car can hit both pedestrians and police officers.
+        // POLICE CRUISERS NEVER COLLIDE WITH OR HARM POLICE OFFICERS!
+        const targetEntities = (v.type === 'police')
+          ? [...this.pedestrians]
+          : [...this.pedestrians, ...(this.policeOfficers || [])];
+
+        targetEntities.forEach(ped => {
+          if (v.type === 'police' && ped.isOfficer) return; // Strict immunity: friendly cruisers never strike officers
           const dx = ped.mesh.position.x - v.mesh.position.x;
           const dz = ped.mesh.position.z - v.mesh.position.z;
-          if (dx * dx + dz * dz > 36) return;
+          if (dx * dx + dz * dz > 40) return;
 
           // Local coordinates of pedestrian relative to vehicle
           const localX = dx * uRightX + dz * uRightZ;
           const localZ = dx * uFwdX + dz * uFwdZ;
 
-          const collRadius = 0.55;
+          const collRadius = 0.60;
           const clampX = Math.max(-halfW, Math.min(halfW, localX));
           const clampZ = Math.max(-halfL, Math.min(halfL, localZ));
           const diffX = localX - clampX;
@@ -4370,48 +4427,76 @@
 
           if (!isColliding) return;
 
-          if (speed >= 2.2) {
-            // High-speed impact: Vehicular manslaughter & ragdoll launch!
+          if (speed >= 2.4) {
+            // Realistic vehicular impact: Bumper strikes legs, body rolls over hood and slides along pavement
             if (!ped.isDead) {
               ped.isDead = true;
               ped.health = 0;
+              if (ped.walkAction) {
+                ped.walkAction.stop();
+                ped.walkAction.reset();
+              }
 
-              const impactSpeed = Math.max(speed, 8);
-              const flingDir = carFwd.clone().multiplyScalar(v.speed >= 0 ? 1 : -1);
-              flingDir.x += (Math.random() - 0.5) * 0.4;
-              flingDir.z += (Math.random() - 0.5) * 0.4;
-              flingDir.normalize();
+              // Car forward travel vector + lateral deflection off curved bumper corners
+              const carMoveDir = carFwd.clone().multiplyScalar(v.speed >= 0 ? 1 : -1);
+              const lateralSign = (localX >= 0) ? 1 : -1;
+              const lateralEjection = carRight.clone().multiplyScalar(lateralSign * (0.8 + Math.abs(localX) / halfW * 0.8));
 
-              ped.velocity = flingDir.multiplyScalar(impactSpeed * 0.95 + 6);
-              ped.velocity.y = 7 + Math.random() * 4; // Fly up in the air
-              ped.angularVelocity = (Math.random() - 0.5) * 16;
+              // Real-life momentum: pedestrian stays grounded on the asphalt (ZERO catapult/rocket launch!)
+              const forwardPower = Math.min(2.8, speed * 0.08 + 0.4);
 
+              ped.velocity = carMoveDir.multiplyScalar(forwardPower).add(lateralEjection);
+              ped.velocity.y = 0; // ZERO vertical lift! Human body drops straight onto pavement
+
+              // Body immediately folds and rests flat on the road surface
+              const groundY = this.getGroundHeight(ped.mesh.position.x, ped.mesh.position.z);
+              ped.mesh.position.y = groundY + 0.12;
+              ped.mesh.rotation.x = Math.PI / 2; // Flat on back/chest
+              ped.mesh.rotation.y = ped.dir + (Math.random() - 0.5) * 0.4;
+              ped.mesh.rotation.z = lateralSign * 0.2;
+              ped.rotVel = null; // Strictly no continuous somersaulting in the air
+
+              // Sound & Blood Effects
               this.spawnBloodEffect(ped.mesh.position);
               audio.playPedestrianHitSound();
 
+              // Car loses small momentum from striking human mass
+              v.speed *= 0.92;
+
               if (v === this.activeVehicle) {
-                if (this.wantedLevel < 1) this.setWantedLevel(1);
-                else if (this.wantedLevel < 5 && Math.random() > 0.4) {
-                  this.setWantedLevel(this.wantedLevel + 1);
+                this.cameraShake = Math.min(0.25, 0.06 + speed * 0.004);
+                if (ped.isOfficer) {
+                  // Running down a police officer escalates wanted level
+                  this.setWantedLevel(Math.max(this.wantedLevel, 3));
+                } else {
+                  if (this.wantedLevel < 1) this.setWantedLevel(1);
+                  else if (this.wantedLevel < 5 && Math.random() > 0.4) {
+                    this.setWantedLevel(this.wantedLevel + 1);
+                  }
+                  const reward = 220 + Math.floor(Math.random() * 320);
+                  this.playerCash += reward;
+                  document.getElementById('cash-val').innerText = this.playerCash.toLocaleString();
                 }
-                const reward = 220 + Math.floor(Math.random() * 320);
-                this.playerCash += reward;
-                document.getElementById('cash-val').innerText = this.playerCash.toLocaleString();
-                v.speed *= 0.88;
               }
             } else {
-              // Dead body struck by moving car: send body skidding and tumbling away
-              const shoveDir = carFwd.clone().multiplyScalar(v.speed >= 0 ? 1 : -1);
-              ped.velocity = shoveDir.multiplyScalar(speed * 0.85 + 2);
-              ped.velocity.y = 3 + Math.random() * 2;
-              ped.angularVelocity = (Math.random() - 0.5) * 12;
-              audio.playPedestrianHitSound();
+              // Dead body on street in contact with moving car:
+              // Gently nudge aside along asphalt with ZERO vertical lift
+              const now = performance.now();
+              if (!ped.lastNudgeTime || (now - ped.lastNudgeTime) > 400) {
+                ped.lastNudgeTime = now;
+                audio.playPedestrianHitSound();
+              }
+              const lateralSign = (localX >= 0) ? 1 : -1;
+              const pushSide = carRight.clone().multiplyScalar(lateralSign * Math.min(2.5, speed * 0.12 + 0.8));
+              ped.mesh.position.addScaledVector(pushSide, 0.2);
+              ped.velocity = pushSide;
+              ped.velocity.y = 0;
             }
           } else {
-            // Low-speed nudge / creep / stopped: Physically push out of vehicle perimeter, zero ghosting
+            // Low-speed nudge (< 2.4 m/s): Physically push out of vehicle bounds, stumble
             this.resolveVehicleObstacleCollisions(ped.mesh.position, 0.65);
             if (!ped.isDead) {
-              ped.dir += (localX >= 0 ? 1 : -1) * (0.9 + Math.random() * 0.5);
+              ped.dir += (localX >= 0 ? 1 : -1) * (0.8 + Math.random() * 0.4);
             }
           }
         });
@@ -4441,32 +4526,31 @@
       updatePedestrians(delta) {
         this.pedestrians.forEach(ped => {
           if (ped.isDead) {
-            // Flying and tumbling from vehicular impact or explosion
-            if (ped.velocity) {
-              ped.mesh.position.addScaledVector(ped.velocity, delta);
-              ped.velocity.y -= 26 * delta; // Gravity
-              ped.mesh.rotation.x += ped.angularVelocity * delta;
-              ped.mesh.rotation.z += ped.angularVelocity * 0.5 * delta;
+            // Realistic asphalt friction stop (Zero flying, zero tumbling, grounded on road)
+            const groundY = this.getGroundHeight(ped.mesh.position.x, ped.mesh.position.z);
+            ped.mesh.position.y = groundY + 0.12;
 
-              // Prevent dead pedestrian bodies from penetrating or entering buildings or vehicles
+            if (ped.velocity) {
+              ped.velocity.y = 0; // Strictly keep on asphalt
+              ped.mesh.position.addScaledVector(ped.velocity, delta);
+
+              // Building deflection
               const hitBuilding = this.resolveBuildingCollisions(ped.mesh.position, 0.7);
-              this.resolveVehicleObstacleCollisions(ped.mesh.position, 0.65);
               if (hitBuilding) {
-                ped.velocity.x *= -0.35;
-                ped.velocity.z *= -0.35;
-                this.spawnSparks(ped.mesh.position);
+                ped.velocity.x *= -0.2;
+                ped.velocity.z *= -0.2;
               }
 
-              // Hit road / sidewalk
-              const groundY = this.getGroundHeight(ped.mesh.position.x, ped.mesh.position.z);
-              if (ped.mesh.position.y <= groundY + 0.15) {
-                ped.mesh.position.y = groundY + 0.15;
+              // Heavy asphalt road friction: body quickly skids to a complete halt within ~0.4s
+              const friction = Math.max(0, 1 - 10.0 * delta);
+              ped.velocity.x *= friction;
+              ped.velocity.z *= friction;
+
+              if (Math.hypot(ped.velocity.x, ped.velocity.z) < 0.15) {
                 ped.velocity = null;
-                ped.angularVelocity = 0;
-                ped.mesh.rotation.set(Math.PI / 2, 0, Math.random() * Math.PI * 2);
+                ped.rotVel = null;
               }
             } else {
-              // Resting dead body: ensure it never penetrates or gets pushed inside buildings or vehicles
               this.resolveBuildingCollisions(ped.mesh.position, 0.7);
               this.resolveVehicleObstacleCollisions(ped.mesh.position, 0.65);
             }
@@ -4761,6 +4845,16 @@
           }
 
           if (maxPen <= 0 || !bestNormal) return;
+
+          // Friendly police cruisers softly separate without crash trauma, damage, alarms, or violent spin
+          if (v.type === 'police' && other.type === 'police') {
+            const normal = bestNormal;
+            v.mesh.position.addScaledVector(normal, maxPen * 0.55);
+            other.mesh.position.addScaledVector(normal, -maxPen * 0.55);
+            this.resolveBuildingCollisions(v.mesh.position, 1.3);
+            this.resolveBuildingCollisions(other.mesh.position, 1.3);
+            return;
+          }
 
           // 1. SOLID PHYSICAL SEPARATION (Zero Ghosting!)
           const normal = bestNormal; // points from B towards A
@@ -5402,20 +5496,23 @@
           if (!off || !off.mesh) continue;
 
           if (off.isDead) {
-            // Ragdoll tumbling if fling velocity exists
+            const groundY = this.getGroundHeight(off.mesh.position.x, off.mesh.position.z);
+            off.mesh.position.y = groundY + 0.15;
+            off.mesh.rotation.x = Math.PI / 2;
+
             if (off.velocity) {
+              off.velocity.y = 0;
               off.mesh.position.addScaledVector(off.velocity, delta);
-              off.velocity.y -= 26 * delta; // Gravity
-              off.mesh.rotation.x += (off.angularVelocity || 0) * delta;
               this.resolveBuildingCollisions(off.mesh.position, 0.7);
               this.resolveVehicleObstacleCollisions(off.mesh.position, 0.65);
 
-              const groundY = this.getGroundHeight(off.mesh.position.x, off.mesh.position.z);
-              if (off.mesh.position.y <= groundY + 0.15) {
-                off.mesh.position.y = groundY + 0.15;
+              const friction = Math.max(0, 1 - 10.0 * delta);
+              off.velocity.x *= friction;
+              off.velocity.z *= friction;
+
+              if (Math.hypot(off.velocity.x, off.velocity.z) < 0.15) {
                 off.velocity = null;
-                off.angularVelocity = 0;
-                off.mesh.rotation.set(Math.PI / 2, 0, off.mesh.rotation.y);
+                off.rotVel = null;
               }
             } else {
               this.resolveBuildingCollisions(off.mesh.position, 0.7);
@@ -5425,6 +5522,16 @@
           }
 
           // Alive Officer:
+          // Lazy-bind mocap walk animation clip if it loaded after officer was spawned
+          if (!off.mixer && (this.pedClips['M_Walk_1'] || this.pedClips['M_Walk_2'])) {
+            const clip = this.pedClips['M_Walk_1'] || this.pedClips['M_Walk_2'];
+            off.mixer = new THREE.AnimationMixer(off.mesh);
+            off.walkAction = off.mixer.clipAction(clip);
+            off.walkAction.setEffectiveWeight(1.0);
+            off.walkAction.time = Math.random() * clip.duration;
+            off.walkAction.play();
+          }
+
           if (off.mixer) off.mixer.update(delta);
 
           const toPlayer = playerPos.clone().sub(off.mesh.position);
@@ -5445,6 +5552,9 @@
           off.mesh.position.y = THREE.MathUtils.lerp(off.mesh.position.y, targetY, delta * 15);
 
           // 2. Tactical Movement: Walk Towards Player -> Stand & Point Gun
+          let isWalking = false;
+          let walkSpeed = 0;
+
           if (dist > 34.0 && off.copCar && !off.copCar.isWreck) {
             // Player fled far away! Return to cruiser to resume vehicle pursuit
             const toCar = off.copCar.mesh.position.clone().sub(off.mesh.position);
@@ -5452,9 +5562,10 @@
             const carDist = toCar.length();
             if (carDist > 1.8) {
               const runDir = toCar.normalize();
-              off.mesh.position.addScaledVector(runDir, 7.5 * delta);
+              walkSpeed = 7.0;
+              off.mesh.position.addScaledVector(runDir, walkSpeed * delta);
               off.mesh.rotation.y = Math.atan2(runDir.x, runDir.z);
-              if (off.walkAction) { off.walkAction.paused = false; off.walkAction.play(); }
+              isWalking = true;
               off.aimWeight = THREE.MathUtils.lerp(off.aimWeight || 0, 0.0, delta * 6.0);
             } else {
               // Re-embark
@@ -5479,31 +5590,24 @@
             toSurround.y = 0;
             const surroundDist = toSurround.length();
 
-            if (dist > targetApproachDist + 0.4) {
+            if (dist > targetApproachDist + 0.35) {
               // PHASE 1: WALKING TOWARDS THE PLAYER to close distance and surround
               const moveDir = (surroundDist > 0.8) ? toSurround.normalize() : toPlayerNorm;
-              const approachSpeed = (dist > 14.0) ? 4.2 : 3.2;
-              off.mesh.position.addScaledVector(moveDir, approachSpeed * delta);
-              if (off.walkAction) {
-                off.walkAction.paused = false;
-                if (!off.walkAction.isRunning()) off.walkAction.play();
-              }
-              // In transition / low ready carry while walking
-              off.aimWeight = THREE.MathUtils.lerp(off.aimWeight || 0, 0.15, delta * 5.0);
-            } else if (dist < 2.0 && playerSpeed < 2.5) {
+              walkSpeed = (dist > 14.0) ? 4.2 : 3.2;
+              off.mesh.position.addScaledVector(moveDir, walkSpeed * delta);
+              isWalking = true;
+              off.aimWeight = THREE.MathUtils.lerp(off.aimWeight || 0, 0.12, delta * 5.0);
+            } else if (dist < 2.2 && playerSpeed < 2.5) {
               // Back up cautiously if player walks directly into officer
               const backDir = toPlayerNorm.clone().negate();
-              off.mesh.position.addScaledVector(backDir, 2.0 * delta);
-              if (off.walkAction) {
-                off.walkAction.paused = false;
-                if (!off.walkAction.isRunning()) off.walkAction.play();
-              }
-              off.aimWeight = THREE.MathUtils.lerp(off.aimWeight || 0, 1.0, delta * 8.0);
+              walkSpeed = 2.2;
+              off.mesh.position.addScaledVector(backDir, walkSpeed * delta);
+              isWalking = true;
+              off.aimWeight = THREE.MathUtils.lerp(off.aimWeight || 0, 0.8, delta * 8.0);
             } else {
               // PHASE 2: STAND STILL & POINT GUN DIRECTLY TOWARDS THE PLAYER
-              if (off.walkAction) {
-                off.walkAction.setEffectiveWeight(Math.max(0, 1.0 - (off.aimWeight || 0) * 1.5));
-              }
+              isWalking = false;
+              walkSpeed = 0;
               off.aimWeight = THREE.MathUtils.lerp(off.aimWeight || 0, 1.0, delta * 8.0);
             }
 
@@ -5525,6 +5629,37 @@
             // Obstacle & vehicle collisions
             this.resolveBuildingCollisions(off.mesh.position, 0.5);
             this.resolveVehicleObstacleCollisions(off.mesh.position, 0.55);
+          }
+
+          // ANIMATE LEGS: Fluid walking animation vs planted feet standing stance!
+          if (off.walkAction) {
+            if (isWalking) {
+              off.walkAction.paused = false;
+              off.walkAction.setEffectiveWeight(1.0);
+              // Match animation stride playback rate to exact physical travel speed (Zero Gliding!)
+              off.walkAction.setEffectiveTimeScale(Math.max(0.85, walkSpeed / 2.7));
+              if (!off.walkAction.isRunning()) off.walkAction.play();
+            } else {
+              // Standing still at gunpoint: smoothly fade walk animation out and plant feet!
+              const standingWeight = Math.max(0, 1.0 - (off.aimWeight || 0) * 1.5);
+              off.walkAction.setEffectiveWeight(standingWeight);
+              if (standingWeight <= 0.05) {
+                off.walkAction.paused = true;
+              }
+            }
+          }
+
+          // Procedural leg fallback for box/composite models
+          if (off.legL && off.legR) {
+            if (isWalking) {
+              off.walkCycle = (off.walkCycle || 0) + delta * (walkSpeed * 2.8);
+              const legSwing = Math.sin(off.walkCycle) * 0.55;
+              off.legL.rotation.x = legSwing;
+              off.legR.rotation.x = -legSwing;
+            } else {
+              off.legL.rotation.x = THREE.MathUtils.lerp(off.legL.rotation.x, 0, delta * 8);
+              off.legR.rotation.x = THREE.MathUtils.lerp(off.legR.rotation.x, 0.08, delta * 8);
+            }
           }
 
           // 3. Aiming Right Arm & Pointing Handgun Directly Towards Player (At Eye Level)
@@ -5578,45 +5713,107 @@
             }
           }
 
-          // 3. Officer Shootout & Gunfire
-          off.shootTimer = (off.shootTimer || 0) + delta;
-          const isPlayerAggressive = this.isFiring || this.isAiming || (isPlayerInVehicle && playerSpeed > 3.5);
-          const shootThreshold = isPlayerAggressive ? 0.95 : 2.2;
+          // 3. Officer Tactical Standoff, Arrest & Shootout
+          // Check whether player is actively attacking / threatening officers with deadly force
+          const now = performance.now();
+          if (this.isFiring) {
+            this.lastPlayerHostileTime = now;
+          }
+          if (isPlayerInVehicle && (this.keys.w || this.keys.shift) && playerSpeed > 5.5 && dist < 14.0) {
+            this.lastPlayerHostileTime = now;
+          }
 
-          if (dist < 28.0 && off.shootTimer > shootThreshold) {
-            off.shootTimer = (Math.random() - 0.5) * 0.4;
-            audio.playGunshot('pistol');
-            off.recoil = 0.26; // Kick pistol up visually
+          // Active combat state: only true if player is currently firing or rammed cops within the last 2.2s
+          const isPlayerActivelyHostile = (now - (this.lastPlayerHostileTime || 0)) < 2200;
 
-            // Muzzle world position
-            const muzzleWorldPos = new THREE.Vector3();
-            off.muzzle.getWorldPosition(muzzleWorldPos);
-            this.spawnSparks(muzzleWorldPos);
+          // DISCIPLINED POLICE TACTICAL RULES:
+          // When police surround the player: They DO NOT SHOOT if the suspect is surrounded or compliant!
+          // They hold the player at gunpoint in an intense standoff and shout tactical commands.
+          // They ONLY open fire if the player actively shoots at them or attempts a vehicular ramming attack.
+          if (isPlayerActivelyHostile) {
+            off.shootTimer = (off.shootTimer || 0) + delta;
+            const shootThreshold = 0.95;
 
-            // Target aim with authentic police spread
-            const targetAim = playerPos.clone().add(new THREE.Vector3(0, 1.2, 0));
-            targetAim.x += (Math.random() - 0.5) * 0.35;
-            targetAim.y += (Math.random() - 0.5) * 0.35;
-            targetAim.z += (Math.random() - 0.5) * 0.35;
+            if (dist < 28.0 && off.shootTimer > shootThreshold) {
+              off.shootTimer = (Math.random() - 0.5) * 0.4;
+              audio.playGunshot('pistol');
+              off.recoil = 0.26; // Kick pistol up visually
 
-            const aimDir = targetAim.sub(muzzleWorldPos).normalize();
-            const tracer = new THREE.Mesh(
-              new THREE.BoxGeometry(0.08, 0.08, 0.65),
-              new THREE.MeshBasicMaterial({ color: 0xffe066 })
-            );
-            tracer.position.copy(muzzleWorldPos);
-            tracer.quaternion.setFromRotationMatrix(
-              new THREE.Matrix4().lookAt(muzzleWorldPos, muzzleWorldPos.clone().add(aimDir), new THREE.Vector3(0, 1, 0))
-            );
-            this.scene.add(tracer);
-            this.projectiles.push({
-              mesh: tracer,
-              velocity: aimDir.multiplyScalar(70),
-              life: 0.5
-            });
+              // Muzzle world position
+              const muzzleWorldPos = new THREE.Vector3();
+              off.muzzle.getWorldPosition(muzzleWorldPos);
+              this.spawnSparks(muzzleWorldPos);
 
-            // Player takes bullet damage
-            this.takeDamage(5 + Math.floor(Math.random() * 6));
+              // Target aim with authentic police spread
+              const targetAim = playerPos.clone().add(new THREE.Vector3(0, 1.2, 0));
+              targetAim.x += (Math.random() - 0.5) * 0.35;
+              targetAim.y += (Math.random() - 0.5) * 0.35;
+              targetAim.z += (Math.random() - 0.5) * 0.35;
+
+              const aimDir = targetAim.sub(muzzleWorldPos).normalize();
+              const tracer = new THREE.Mesh(
+                new THREE.BoxGeometry(0.08, 0.08, 0.65),
+                new THREE.MeshBasicMaterial({ color: 0xffe066 })
+              );
+              tracer.position.copy(muzzleWorldPos);
+              tracer.quaternion.setFromRotationMatrix(
+                new THREE.Matrix4().lookAt(muzzleWorldPos, muzzleWorldPos.clone().add(aimDir), new THREE.Vector3(0, 1, 0))
+              );
+              this.scene.add(tracer);
+              this.projectiles.push({
+                mesh: tracer,
+                velocity: aimDir.multiplyScalar(70),
+                life: 0.5
+              });
+
+              // Player takes bullet damage
+              this.takeDamage(5 + Math.floor(Math.random() * 6));
+            }
+          } else {
+            // STANDOFF MODE: POLICE HOLD THEIR FIRE!
+            // Police surround the suspect, hold them at gunpoint, and shout commands!
+            off.shootTimer = 0; // Strictly zero shooting while surrounding suspect
+
+            // Voice warnings & HUD tactical alerts periodically
+            off.shoutTimer = (off.shoutTimer || 0) + delta;
+            if (off.shoutTimer > 3.8 && dist < 20.0) {
+              off.shoutTimer = 0;
+              let commands;
+              if (isPlayerInVehicle) {
+                commands = [
+                  "LSPD! TURN OFF THE ENGINE AND STEP OUT OF THE VEHICLE!",
+                  "DRIVER! PUT YOUR HANDS ON THE STEERING WHEEL AND DO NOT MOVE!",
+                  "WE HAVE YOU SURROUNDED! CUT THE ENGINE NOW!",
+                  "LSPD! STEP OUT OF THE CAR WITH YOUR HANDS IN THE AIR!"
+                ];
+              } else {
+                commands = [
+                  "WE HAVE YOU SURROUNDED! HANDS IN THE AIR!",
+                  "LSPD! DROP YOUR WEAPON AND STAND DOWN!",
+                  "DON'T MOVE! KEEP YOUR HANDS WHERE WE CAN SEE THEM!",
+                  "STAND DOWN! DO NOT RESIST OR WE WILL OPEN FIRE!"
+                ];
+              }
+              const cmd = commands[Math.floor(Math.random() * commands.length)];
+              this.showPoliceAlert(cmd);
+              audio.speakPoliceWarning(cmd);
+            }
+
+            // Arrest / BUSTED mechanic:
+            // 1. On foot: If an officer gets close (< 3.0m) to the surrounded suspect
+            if (!isPlayerInVehicle && dist < 3.0 && this.state === 'PLAYING') {
+              this.triggerBusted();
+            }
+
+            // 2. In vehicle: If player vehicle is stopped/boxed in (< 2.5 m/s) and surrounded (< 4.2m)
+            if (isPlayerInVehicle && playerSpeed < 2.5 && dist < 4.2 && this.state === 'PLAYING') {
+              off.carBustTimer = (off.carBustTimer || 0) + delta;
+              if (off.carBustTimer > 1.8) {
+                this.triggerBusted();
+              }
+            } else {
+              off.carBustTimer = 0;
+            }
           }
         }
       }
@@ -5629,82 +5826,183 @@
           ? this.activeVehicle.mesh.position
           : this.player.mesh.position;
 
-        this.policeCars.forEach(cop => {
+        this.policeCars.forEach((cop, copIdx) => {
           if (!cop || !cop.mesh || cop.isWreck) return;
 
           const toTarget = targetPos.clone().sub(cop.mesh.position);
           toTarget.y = 0;
           const dist = toTarget.length();
+          const copFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(cop.mesh.quaternion);
 
           // 1. VEHICLE PURSUIT (When player is driving a functioning vehicle)
           if (isPlayerInVehicle) {
             const playerSpeed = (this.activeVehicle && typeof this.activeVehicle.speed === 'number') ? Math.abs(this.activeVehicle.speed) : 0;
+            const playerFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(this.activeVehicle.mesh.quaternion);
+            playerFwd.y = 0;
+            playerFwd.normalize();
+            const playerRight = new THREE.Vector3(1, 0, 0).applyQuaternion(this.activeVehicle.mesh.quaternion);
+            playerRight.y = 0;
+            playerRight.normalize();
 
-            if (dist > 5.5) {
-              // Steer toward player smoothly
-              const targetYaw = Math.atan2(toTarget.x, toTarget.z);
-              cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 4.5);
-              const copFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(cop.mesh.quaternion);
+            // REALISTIC PURSUIT FORMATION (Staggered trailing lanes):
+            // Cruiser 0: Trailing center (-12m)
+            // Cruiser 1: Trailing left lane (-14.5m, -4.5m lateral)
+            // Cruiser 2: Trailing right lane (-14.5m, +4.5m lateral)
+            const laneOffset = (copIdx === 0) ? 0 : ((copIdx % 2 === 1) ? -4.5 : 4.5);
+            const followDist = (copIdx === 0) ? -12.0 : -14.5;
+            const tacticalChasePos = targetPos.clone()
+              .addScaledVector(playerFwd, followDist)
+              .addScaledVector(playerRight, laneOffset);
 
-              // Match speed: accelerate if behind, decelerate if close
-              const targetSpeed = Math.min(32, Math.max(14, playerSpeed * 1.15 + 3));
-              cop.speed = targetSpeed;
-              cop.mesh.position.addScaledVector(copFwd, targetSpeed * delta);
-              this.resolveBuildingCollisions(cop.mesh.position, 1.8);
-            } else {
-              // Close range: tactical PIT maneuver or match speed alongside
-              const targetYaw = Math.atan2(toTarget.x, toTarget.z);
-              cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 3.0);
-              const copFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(cop.mesh.quaternion);
+            const toChasePos = tacticalChasePos.sub(cop.mesh.position);
+            toChasePos.y = 0;
+            const distToChasePos = toChasePos.length();
 
-              if (playerSpeed > 4.0) {
-                cop.speed = playerSpeed;
-                cop.mesh.position.addScaledVector(copFwd, playerSpeed * delta);
+            if (playerSpeed < 3.5) {
+              // Player vehicle is slowing down, stopped, or boxed in:
+              // Cruisers brake smoothly into a roadblock perimeter (spaced out so they don't collide!)
+              const standoffAngle = (copIdx === 0) ? 0 : ((copIdx % 2 === 1) ? -0.65 : 0.65);
+              const standoffDist = 11.5 + copIdx * 2.0;
+              const roadblockTarget = targetPos.clone()
+                .addScaledVector(playerFwd, -standoffDist * Math.cos(standoffAngle))
+                .addScaledVector(playerRight, standoffDist * Math.sin(standoffAngle));
+
+              const toRoadblock = roadblockTarget.sub(cop.mesh.position);
+              toRoadblock.y = 0;
+              const distToRoadblock = toRoadblock.length();
+
+              if (distToRoadblock > 2.5 && dist > 10.0) {
+                const targetYaw = Math.atan2(toRoadblock.x, toRoadblock.z);
+                cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 3.5);
+                cop.speed = Math.min(9.0, distToRoadblock * 1.8);
+                cop.mesh.position.addScaledVector(copFwd, cop.speed * delta);
               } else {
-                // When player vehicle is stopped/boxed in: BRAKE and hold perimeter! DO NOT KEEP RAMMING!
+                // Fully halted at assigned roadblock position
                 cop.speed = 0;
+                const targetYaw = Math.atan2(toTarget.x, toTarget.z);
+                cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 2.5);
               }
-            }
 
-            // Disembark officers when player vehicle is stopped, boxed in, or surrounded
-            const shouldDisembark = (dist <= 16.5) && (cop.speed < 8.0 || playerSpeed < 4.0);
-            if (shouldDisembark && !cop.hasDisembarked) {
-              this.disembarkPoliceOfficers(cop);
-            }
+              // Disembark officers ONLY when cruiser is virtually stationary! (Prevents hitting officers)
+              if (dist <= 17.0 && cop.speed < 0.6 && !cop.hasDisembarked) {
+                cop.speed = 0;
+                this.disembarkPoliceOfficers(cop);
+              }
+            } else {
+              // High-speed chase:
+              if (dist < 8.0) {
+                // Emergency collision avoidance against player car: steer parallel and brake!
+                const playerYaw = Math.atan2(playerFwd.x, playerFwd.z);
+                cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, playerYaw, delta * 5.0);
+                cop.speed = Math.max(0, playerSpeed * 0.85 - 2.5);
+                cop.mesh.position.addScaledVector(copFwd, cop.speed * delta);
+              } else if (distToChasePos > 2.0) {
+                // Steer toward tactical trailing pocket
+                const targetYaw = Math.atan2(toChasePos.x, toChasePos.z);
+                cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 4.5);
+                const desiredSpeed = (dist > 18.0)
+                  ? Math.min(36, playerSpeed * 1.15 + 4)
+                  : playerSpeed * 1.02 + 0.5;
+                cop.speed = THREE.MathUtils.lerp(cop.speed || 0, desiredSpeed, delta * 3.5);
+                cop.mesh.position.addScaledVector(copFwd, cop.speed * delta);
+              } else {
+                // Locked in formation pocket
+                const playerYaw = Math.atan2(playerFwd.x, playerFwd.z);
+                cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, playerYaw, delta * 4.0);
+                cop.speed = THREE.MathUtils.lerp(cop.speed || 0, playerSpeed, delta * 4.0);
+                cop.mesh.position.addScaledVector(copFwd, cop.speed * delta);
+              }
 
-            // Check physical car-to-car collisions
-            this.checkVehicleVehicleCollisions(cop);
-            // Check physical car-to-pedestrian collisions
-            this.checkVehiclePedestrianCollisions(cop);
+              this.resolveBuildingCollisions(cop.mesh.position, 1.8);
+            }
 
           } else {
-            // 2. FOOT PURSUIT & SHOOTOUT (When player is on foot or car is destroyed)
-            // Police cruisers approach and establish tactical perimeter, then disembark officers!
-            const standoffDist = 11.0;
+            // 2. FOOT PURSUIT (When player is on foot)
+            // Assign distinct angled standoff roadblock positions so cruisers NEVER collide with each other!
+            // Cruiser 0: Direct rear (angle 0)
+            // Cruiser 1: Right flank (+42° offset)
+            // Cruiser 2: Left flank (-42° offset)
+            const angleOffset = (copIdx === 0) ? 0 : ((copIdx % 2 === 1) ? 0.72 : -0.72);
+            const standoffRadius = 12.0 + copIdx * 2.0;
 
-            if (dist > standoffDist) {
-              // Drive up to the standoff perimeter
-              const targetYaw = Math.atan2(toTarget.x, toTarget.z);
-              cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 5.0);
-              const copFwd = new THREE.Vector3(0, 0, 1).applyQuaternion(cop.mesh.quaternion);
-              cop.speed = 16;
-              cop.mesh.position.addScaledVector(copFwd, 16 * delta);
+            // Approach direction relative to player
+            const baseAngle = Math.atan2(cop.mesh.position.x - targetPos.x, cop.mesh.position.z - targetPos.z);
+            const slotAngle = baseAngle + angleOffset * 0.4;
+
+            const standoffTarget = targetPos.clone().add(new THREE.Vector3(
+              Math.sin(slotAngle) * standoffRadius,
+              0,
+              Math.cos(slotAngle) * standoffRadius
+            ));
+
+            const toSlot = standoffTarget.sub(cop.mesh.position);
+            toSlot.y = 0;
+            const distToSlot = toSlot.length();
+
+            if (distToSlot > 2.0 && dist > 11.0) {
+              const targetYaw = Math.atan2(toSlot.x, toSlot.z);
+              cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 4.0);
+              cop.speed = Math.min(14, distToSlot * 2.0 + 2);
+              cop.mesh.position.addScaledVector(copFwd, cop.speed * delta);
               this.resolveBuildingCollisions(cop.mesh.position, 1.8);
-              this.checkVehicleVehicleCollisions(cop);
-              this.checkVehiclePedestrianCollisions(cop);
             } else {
+              // Arrived at tactical standoff perimeter: STOP COMPLETELY!
               cop.speed = 0;
-              // Hold position at standoff perimeter and face the suspect
               const targetYaw = Math.atan2(toTarget.x, toTarget.z);
-              cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 3.5);
-              this.checkVehiclePedestrianCollisions(cop);
+              cop.mesh.rotation.y = THREE.MathUtils.lerp(cop.mesh.rotation.y, targetYaw, delta * 3.0);
             }
 
-            // Disembark officers once arrived at standoff perimeter!
-            if (dist <= 15.0 && !cop.hasDisembarked) {
+            // Disembark officers ONLY when fully stopped at the perimeter!
+            if (dist <= 17.0 && cop.speed < 0.6 && !cop.hasDisembarked) {
+              cop.speed = 0;
               this.disembarkPoliceOfficers(cop);
             }
           }
+
+          // 3. CRUISER-TO-CRUISER ANTI-COLLISION RADAR (Never collide with fellow police cars!)
+          this.policeCars.forEach(otherCop => {
+            if (otherCop === cop || !otherCop || !otherCop.mesh || otherCop.isWreck) return;
+            const toOther = otherCop.mesh.position.clone().sub(cop.mesh.position);
+            toOther.y = 0;
+            const dOther = toOther.length();
+            if (dOther < 9.0 && dOther > 0.001) {
+              const toOtherNorm = toOther.clone().normalize();
+              // If other cruiser is in front along heading: brake to match or yield!
+              const fwdDot = copFwd.dot(toOtherNorm);
+              if (fwdDot > 0.25) {
+                cop.speed = Math.min(cop.speed, Math.max(0, (otherCop.speed || 0) * 0.7 - 1.5));
+              }
+              // Lateral steering separation so cruisers keep safe lane spacing
+              const rightVec = new THREE.Vector3(-copFwd.z, 0, copFwd.x);
+              const sideDot = rightVec.dot(toOtherNorm);
+              const steerSign = sideDot >= 0 ? -1 : 1;
+              cop.mesh.rotateY(steerSign * delta * 1.6);
+            }
+          });
+
+          // 4. POLICEMEN & PEDESTRIAN FORWARD SAFETY RADAR (Never hit officers or pedestrians!)
+          if (this.policeOfficers && this.policeOfficers.length > 0) {
+            for (let o = 0; o < this.policeOfficers.length; o++) {
+              const off = this.policeOfficers[o];
+              if (!off || !off.mesh || off.isDead) continue;
+              const toOff = off.mesh.position.clone().sub(cop.mesh.position);
+              toOff.y = 0;
+              const dOff = toOff.length();
+              if (dOff < 6.5 && dOff > 0.001) {
+                const fwdDot = copFwd.dot(toOff.clone().normalize());
+                if (fwdDot > 0.3) {
+                  // Officer in driving path: emergency brake to complete stop!
+                  cop.speed = Math.max(0, cop.speed - 26 * delta);
+                  break;
+                }
+              }
+            }
+          }
+
+          // Check physical vehicle-to-vehicle collisions (safe soft separation)
+          this.checkVehicleVehicleCollisions(cop);
+          // Check physical vehicle-to-pedestrian collisions (strict officer immunity)
+          this.checkVehiclePedestrianCollisions(cop);
         });
       }
 
@@ -5753,6 +6051,38 @@
           document.getElementById('armor-bar').style.width = '100%';
           document.getElementById('cash-val').innerText = this.playerCash.toLocaleString();
           document.getElementById('wasted-screen').classList.remove('show');
+          this.state = 'PLAYING';
+        }, 3500);
+      }
+
+      triggerBusted() {
+        if (this.state === 'BUSTED' || this.state === 'WASTED') return;
+        this.state = 'BUSTED';
+        audio.stopCarEngine();
+        audio.playPoliceRadioChirp();
+        const bustedScreen = document.getElementById('busted-screen');
+        if (bustedScreen) bustedScreen.classList.add('show');
+
+        setTimeout(() => {
+          // Respawn outside Police Station
+          this.playerHealth = 100;
+          this.playerArmor = 50;
+          this.playerCash = Math.max(0, this.playerCash - 500);
+          this.wantedLevel = 0;
+          this.setWantedLevel(0);
+          if (this.playerMode === 'IN_VEHICLE') {
+            this.playerMode = 'ON_FOOT';
+            this.player.mesh.visible = true;
+            this.activeVehicle = null;
+            document.getElementById('vehicle-speedo').style.display = 'none';
+            document.getElementById('prompt-box').style.display = 'none';
+          }
+          this.updateMobileUI();
+          this.player.mesh.position.set(25, 0, -20);
+          document.getElementById('health-bar').style.width = '100%';
+          document.getElementById('armor-bar').style.width = '50%';
+          document.getElementById('cash-val').innerText = this.playerCash.toLocaleString();
+          if (bustedScreen) bustedScreen.classList.remove('show');
           this.state = 'PLAYING';
         }, 3500);
       }
