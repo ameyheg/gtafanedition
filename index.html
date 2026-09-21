@@ -567,23 +567,22 @@
       z-index: 31;
     }
 
-    /* Analog Joystick Area (Bottom-Left) */
+    /* Dynamic Floating Virtual Joystick Area (Left 50% of the screen) */
     #joystick-zone {
       position: absolute;
-      bottom: 24px;
-      left: 24px;
-      width: 160px;
-      height: 160px;
+      top: 0;
+      left: 0;
+      width: 50vw;
+      height: 100vh;
       pointer-events: auto;
       touch-action: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       z-index: 35;
     }
 
     #joystick-base {
-      position: relative;
+      position: absolute;
+      bottom: max(32px, env(safe-area-inset-bottom, 32px));
+      left: max(32px, env(safe-area-inset-left, 32px));
       width: 136px;
       height: 136px;
       border-radius: 50%;
@@ -592,6 +591,10 @@
       box-shadow: 0 4px 25px rgba(0, 0, 0, 0.75), inset 0 0 15px rgba(250, 204, 21, 0.15);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      opacity: 0.75;
+      transition: opacity 0.2s ease;
     }
 
     #joystick-knob {
@@ -621,18 +624,18 @@
     .arrow-left { left: 8px; top: 50%; transform: translateY(-50%); }
     .arrow-right { right: 8px; top: 50%; transform: translateY(-50%); }
 
-    /* Action Buttons Cluster (Bottom-Right) */
+    /* Action Buttons Cluster (Bottom-Right with Safe-Area insets) */
     #mobile-actions {
       position: absolute;
-      bottom: 20px;
-      right: 20px;
+      bottom: max(18px, env(safe-area-inset-bottom, 18px));
+      right: max(18px, env(safe-area-inset-right, 18px));
       display: grid;
       grid-template-areas:
         ".         btn-aim   btn-car"
         "btn-wpn   btn-jump  btn-fire"
-        ".         btn-rad   .";
-      grid-template-columns: 50px 56px 72px;
-      grid-template-rows: 50px 56px 44px;
+        "btn-lnd   btn-rad   btn-brk";
+      grid-template-columns: 50px 58px 72px;
+      grid-template-rows: 50px 58px 50px;
       grid-gap: 10px;
       align-items: center;
       justify-items: center;
@@ -692,6 +695,46 @@
     }
     .m-btn-fire .m-btn-icon { font-size: 26px; }
 
+    /* Green Acceleration Pedal in Car Mode */
+    .m-btn-fire.m-btn-gas {
+      background: radial-gradient(circle, #22c55e 0%, #15803d 100%) !important;
+      border-color: #86efac !important;
+      box-shadow: 0 0 20px rgba(34, 197, 94, 0.6) !important;
+    }
+
+    .m-btn-brake {
+      grid-area: btn-brk;
+      width: 58px;
+      height: 50px;
+      border-radius: 14px;
+      background: radial-gradient(circle, #ef4444 0%, #991b1b 100%);
+      border-color: #fca5a5;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.5);
+    }
+
+    .m-btn-land {
+      grid-area: btn-lnd;
+      width: 50px;
+      height: 50px;
+      background: radial-gradient(circle, #eab308 0%, #a16207 100%);
+      border-color: #fde047;
+      box-shadow: 0 0 16px rgba(234, 179, 8, 0.5);
+    }
+
+    .m-btn-fullscreen {
+      position: absolute;
+      top: max(14px, env(safe-area-inset-top, 14px));
+      left: max(14px, env(safe-area-inset-left, 14px));
+      width: 40px;
+      height: 40px;
+      font-size: 18px;
+      background: rgba(15, 23, 42, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      z-index: 45;
+      pointer-events: auto;
+    }
+
     .m-btn-aim {
       grid-area: btn-aim;
       width: 52px;
@@ -714,8 +757,8 @@
 
     .m-btn-jump {
       grid-area: btn-jump;
-      width: 52px;
-      height: 52px;
+      width: 54px;
+      height: 54px;
       border-color: rgba(74, 222, 128, 0.6);
     }
 
@@ -816,6 +859,9 @@
 
   <!-- Mobile Touch Controls Overlay -->
   <div id="mobile-controls">
+    <!-- Mobile Fullscreen Toggle Button -->
+    <button id="btn-m-fullscreen" class="m-btn m-btn-fullscreen" title="Toggle Fullscreen">⛶</button>
+
     <!-- Touch Swipe Look Zone -->
     <div id="touch-look-zone"></div>
 
@@ -832,38 +878,50 @@
 
     <!-- Right Thumb Action Buttons Cluster -->
     <div id="mobile-actions">
-      <!-- Aim / Precision Target Button -->
+      <!-- Aim / Precision Target Button (On foot / Heli Lower) -->
       <button id="btn-m-aim" class="m-btn m-btn-aim" title="Aim Weapon">
         <span class="m-btn-icon">🎯</span>
         <span class="m-btn-label">AIM</span>
       </button>
 
-      <!-- Enter / Exit Car Button -->
+      <!-- Enter / Exit Vehicle Button -->
       <button id="btn-m-enter" class="m-btn m-btn-car" title="Enter / Exit Vehicle">
         <span class="m-btn-icon" id="m-enter-icon">🚗</span>
         <span class="m-btn-label" id="m-enter-label">ENTER</span>
       </button>
 
-      <!-- Weapon Switch Quick Button -->
+      <!-- Weapon Switch Quick Button (On foot) -->
       <button id="btn-m-weapon" class="m-btn m-btn-weapon" title="Switch Weapon">
         <span class="m-btn-icon">🔄</span>
         <span class="m-btn-label">GUN</span>
       </button>
 
-      <!-- Jump / Handbrake Button -->
+      <!-- Jump / Handbrake / Climb Button -->
       <button id="btn-m-jump" class="m-btn m-btn-jump" title="Jump / Handbrake">
         <span class="m-btn-icon" id="m-jump-icon">🦘</span>
         <span class="m-btn-label" id="m-jump-label">JUMP</span>
       </button>
 
-      <!-- Fire / Attack Button -->
+      <!-- Primary Action: Fire (On foot) / Gas Pedal (In Car) -->
       <button id="btn-m-fire" class="m-btn m-btn-fire" title="Attack / Shoot">
-        <span class="m-btn-icon">💥</span>
-        <span class="m-btn-label">FIRE</span>
+        <span class="m-btn-icon" id="m-fire-icon">💥</span>
+        <span class="m-btn-label" id="m-fire-label">FIRE</span>
+      </button>
+
+      <!-- Secondary Action: Brake / Reverse Pedal (In Car) -->
+      <button id="btn-m-brake" class="m-btn m-btn-brake" title="Brake / Reverse" style="display:none;">
+        <span class="m-btn-icon" id="m-brake-icon">🛑</span>
+        <span class="m-btn-label" id="m-brake-label">BRAKE</span>
+      </button>
+
+      <!-- Helicopter Auto-Land Button -->
+      <button id="btn-m-land" class="m-btn m-btn-land" title="Auto-Land" style="display:none;">
+        <span class="m-btn-icon" id="m-land-icon">🛬</span>
+        <span class="m-btn-label" id="m-land-label">LAND</span>
       </button>
 
       <!-- Radio Button (Active in Vehicle) -->
-      <button id="btn-m-radio" class="m-btn m-btn-radio" title="Change Radio">
+      <button id="btn-m-radio" class="m-btn m-btn-radio" title="Change Radio" style="display:none;">
         <span class="m-btn-icon">📻</span>
         <span class="m-btn-label">RADIO</span>
       </button>
@@ -2821,6 +2879,38 @@
     }
 
     class EntityBuilder {
+      // Soft Ambient Contact / Blob Shadow for Pedestrians, Police and Player (0% GPU skinning overhead)
+      static createContactShadowMesh(scale = 1.0) {
+        if (!EntityBuilder.contactShadowMat) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 64;
+          canvas.height = 64;
+          const ctx = canvas.getContext('2d');
+          const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+          grad.addColorStop(0, 'rgba(0, 0, 0, 0.65)');
+          grad.addColorStop(0.42, 'rgba(0, 0, 0, 0.28)');
+          grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, 64, 64);
+
+          const texture = new THREE.CanvasTexture(canvas);
+          EntityBuilder.contactShadowMat = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            depthWrite: false,
+            opacity: 0.75
+          });
+          EntityBuilder.contactShadowGeo = new THREE.PlaneGeometry(1, 1);
+          EntityBuilder.contactShadowGeo.rotateX(-Math.PI / 2);
+        }
+        const m = new THREE.Mesh(EntityBuilder.contactShadowGeo, EntityBuilder.contactShadowMat);
+        m.scale.set(scale, scale, scale);
+        m.position.y = 0.025;
+        m.renderOrder = 1;
+        m.isContactShadow = true;
+        return m;
+      }
+
       // Helipad Texture Generator for street and skyscraper landing pads
       static createHelipadTexture() {
         const canvas = document.createElement('canvas');
@@ -3142,6 +3232,8 @@
         gunGroup.add(gunBody);
         armR.add(gunGroup);
 
+        char.add(EntityBuilder.createContactShadowMesh(isPlayer ? 1.15 : 0.95));
+
         return {
           mesh: char,
           head: head,
@@ -3281,6 +3373,7 @@
         pistol.add(muzzle);
 
         officerGroup.add(shoulderL, shoulderR);
+        officerGroup.add(EntityBuilder.createContactShadowMesh(1.05));
 
         return {
           mesh: officerGroup,
@@ -3431,6 +3524,8 @@
         this.keys = { w: false, a: false, s: false, d: false, shift: false, space: false, ctrl: false };
         this.mousePitch = 0;
         this.mouseYaw = 0;
+        this.touchLookVelX = 0;
+        this.touchLookVelY = 0;
 
         // Entities Lists
         this.vehicles = [];
@@ -3465,11 +3560,19 @@
 
         this.camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1500);
 
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (window.innerWidth <= 1024);
+        this.isMobile = isMobile;
+
+        // Mobile performance optimization: disable expensive MSAA and clamp DPR to 1.4x
+        this.renderer = new THREE.WebGLRenderer({
+          antialias: !isMobile,
+          powerPreference: 'high-performance',
+          precision: isMobile ? 'mediump' : 'highp'
+        });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setPixelRatio(isMobile ? Math.min(window.devicePixelRatio, 1.4) : Math.min(window.devicePixelRatio, 2));
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.15;
         this.container.appendChild(this.renderer.domElement);
@@ -3481,23 +3584,34 @@
         const hemiLight = new THREE.HemisphereLight(0xbae6fd, 0x785535, 0.6);
         this.scene.add(hemiLight);
 
-        const sun = new THREE.DirectionalLight(0xffedd5, 1.4);
-        sun.position.set(150, 250, 100);
-        sun.castShadow = true;
-        sun.shadow.mapSize.width = 2048;
-        sun.shadow.mapSize.height = 2048;
-        sun.shadow.camera.near = 10;
-        sun.shadow.camera.far = 800;
-        sun.shadow.camera.left = -200;
-        sun.shadow.camera.right = 200;
-        sun.shadow.camera.top = 200;
-        sun.shadow.camera.bottom = -200;
-        this.scene.add(sun);
+        this.sun = new THREE.DirectionalLight(0xffedd5, 1.4);
+        this.sun.position.set(100, 180, 70);
+        this.sun.castShadow = true;
+        // 1024x1024 on mobile cuts shadow render fillrate by 75% while keeping crisp shadows
+        const shadowRes = isMobile ? 1024 : 2048;
+        this.sun.shadow.mapSize.width = shadowRes;
+        this.sun.shadow.mapSize.height = shadowRes;
+        this.sun.shadow.camera.near = 10;
+        this.sun.shadow.camera.far = 420;
+        // High-density frustum (80m desktop / 55m mobile) centered on player provides 20x sharper shadows
+        const frustumSize = isMobile ? 55 : 80;
+        this.sun.shadow.camera.left = -frustumSize;
+        this.sun.shadow.camera.right = frustumSize;
+        this.sun.shadow.camera.top = frustumSize;
+        this.sun.shadow.camera.bottom = -frustumSize;
+        this.sun.shadow.bias = -0.0003;
+        this.sun.shadow.normalBias = 0.025; // Prevents polygon acne on character and vehicle surfaces
+        this.scene.add(this.sun);
+
+        this.sunTarget = new THREE.Object3D();
+        this.scene.add(this.sunTarget);
+        this.sun.target = this.sunTarget;
 
         window.addEventListener('resize', () => {
           this.camera.aspect = window.innerWidth / window.innerHeight;
           this.camera.updateProjectionMatrix();
           this.renderer.setSize(window.innerWidth, window.innerHeight);
+          this.renderer.setPixelRatio(this.isMobile ? Math.min(window.devicePixelRatio, 1.4) : Math.min(window.devicePixelRatio, 2));
         });
       }
 
@@ -3785,13 +3899,23 @@
           if (window.innerWidth <= 1024) enableMobileControls();
         });
 
-        // 1. ANALOG THUMB JOYSTICK (Bottom-Left)
+        // 1. DYNAMIC FLOATING ANALOG THUMB JOYSTICK (Left 50% Screen)
         const joyZone = document.getElementById('joystick-zone');
+        const joyBase = document.getElementById('joystick-base');
         const joyKnob = document.getElementById('joystick-knob');
         let joyTouchId = null;
         let joyBaseX = 0;
         let joyBaseY = 0;
-        const maxDist = 48;
+        const maxDist = 52;
+
+        const defaultJoyBase = () => {
+          if (!joyBase) return;
+          joyBase.style.left = '95px';
+          joyBase.style.top = 'auto';
+          joyBase.style.bottom = '35px';
+          joyBase.style.opacity = '0.75';
+          if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
+        };
 
         const updateJoystick = (clientX, clientY) => {
           let dx = clientX - joyBaseX;
@@ -3829,9 +3953,15 @@
             e.preventDefault();
             const touch = e.changedTouches[0];
             joyTouchId = touch.identifier;
-            const rect = joyZone.getBoundingClientRect();
-            joyBaseX = rect.left + rect.width / 2;
-            joyBaseY = rect.top + rect.height / 2;
+            joyBaseX = touch.clientX;
+            joyBaseY = touch.clientY;
+            if (joyBase) {
+              joyBase.style.left = `${joyBaseX}px`;
+              joyBase.style.top = `${joyBaseY}px`;
+              joyBase.style.bottom = 'auto';
+              joyBase.style.opacity = '1.0';
+            }
+            if (navigator.vibrate) navigator.vibrate(8);
             updateJoystick(touch.clientX, touch.clientY);
           }, { passive: false });
 
@@ -3850,7 +3980,7 @@
             for (let i = 0; i < e.changedTouches.length; i++) {
               if (e.changedTouches[i].identifier === joyTouchId) {
                 joyTouchId = null;
-                if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
+                defaultJoyBase();
                 this.keys.w = false;
                 this.keys.s = false;
                 this.keys.a = false;
@@ -3863,13 +3993,18 @@
           joyZone.addEventListener('touchend', endJoystick);
           joyZone.addEventListener('touchcancel', endJoystick);
 
-          // Mouse fallback for joystick dragging
+          // Mouse fallback for testing on desktop
           let isMouseJoy = false;
           joyZone.addEventListener('mousedown', (e) => {
             isMouseJoy = true;
-            const rect = joyZone.getBoundingClientRect();
-            joyBaseX = rect.left + rect.width / 2;
-            joyBaseY = rect.top + rect.height / 2;
+            joyBaseX = e.clientX;
+            joyBaseY = e.clientY;
+            if (joyBase) {
+              joyBase.style.left = `${joyBaseX}px`;
+              joyBase.style.top = `${joyBaseY}px`;
+              joyBase.style.bottom = 'auto';
+              joyBase.style.opacity = '1.0';
+            }
             updateJoystick(e.clientX, e.clientY);
           });
           window.addEventListener('mousemove', (e) => {
@@ -3878,7 +4013,7 @@
           window.addEventListener('mouseup', () => {
             if (isMouseJoy) {
               isMouseJoy = false;
-              if (joyKnob) joyKnob.style.transform = 'translate(0px, 0px)';
+              defaultJoyBase();
               this.keys.w = false;
               this.keys.s = false;
               this.keys.a = false;
@@ -3893,6 +4028,7 @@
         let lookTouchId = null;
         let lookLastX = 0;
         let lookLastY = 0;
+        let lookLastTime = performance.now();
 
         if (lookZone) {
           lookZone.addEventListener('touchstart', (e) => {
@@ -3901,6 +4037,9 @@
             lookTouchId = touch.identifier;
             lookLastX = touch.clientX;
             lookLastY = touch.clientY;
+            lookLastTime = performance.now();
+            this.touchLookVelX = 0;
+            this.touchLookVelY = 0;
           }, { passive: false });
 
           lookZone.addEventListener('touchmove', (e) => {
@@ -3908,10 +4047,20 @@
             for (let i = 0; i < e.changedTouches.length; i++) {
               const touch = e.changedTouches[i];
               if (touch.identifier === lookTouchId) {
+                const now = performance.now();
+                const dt = Math.max(1, now - lookLastTime);
+                lookLastTime = now;
+
                 const dx = touch.clientX - lookLastX;
                 const dy = touch.clientY - lookLastY;
                 lookLastX = touch.clientX;
                 lookLastY = touch.clientY;
+
+                // Track swipe velocity for fluid mobile flick inertia
+                const vx = (dx / dt) * 16.6;
+                const vy = (dy / dt) * 16.6;
+                this.touchLookVelX = this.touchLookVelX * 0.3 + vx * 0.7;
+                this.touchLookVelY = this.touchLookVelY * 0.3 + vy * 0.7;
 
                 this.mouseYaw -= dx * 0.0055;
                 this.mousePitch -= dy * 0.0045;
@@ -3955,24 +4104,48 @@
         }
 
         // 3. ACTION BUTTONS CLUSTER
+        const haptic = (pat) => {
+          try { if (navigator.vibrate) navigator.vibrate(pat); } catch(e) {}
+        };
+
         const btnFire = document.getElementById('btn-m-fire');
         let fireInterval = null;
         if (btnFire) {
           const startFire = (e) => {
             if (e) e.preventDefault();
             if (this.state !== 'PLAYING') return;
+
+            if (this.playerMode === 'IN_VEHICLE') {
+              // Gas pedal / Forward flight throttle
+              this.keys.w = true;
+              this.keys.shift = true;
+              haptic(10);
+              return;
+            }
+
+            // On foot weapon fire
             this.isFiring = true;
             this.handleWeaponFire();
+            haptic(14);
             clearInterval(fireInterval);
             fireInterval = setInterval(() => {
-              if (this.isFiring && this.state === 'PLAYING') this.handleWeaponFire();
+              if (this.isFiring && this.state === 'PLAYING') {
+                this.handleWeaponFire();
+                haptic(10);
+              }
             }, 140);
           };
+
           const stopFire = (e) => {
             if (e) e.preventDefault();
+            if (this.playerMode === 'IN_VEHICLE') {
+              this.keys.w = false;
+              this.keys.shift = false;
+            }
             this.isFiring = false;
             clearInterval(fireInterval);
           };
+
           btnFire.addEventListener('touchstart', startFire, { passive: false });
           btnFire.addEventListener('touchend', stopFire);
           btnFire.addEventListener('touchcancel', stopFire);
@@ -3980,13 +4153,65 @@
           btnFire.addEventListener('mouseup', stopFire);
         }
 
+        const btnBrake = document.getElementById('btn-m-brake');
+        if (btnBrake) {
+          const startBrake = (e) => {
+            if (e) e.preventDefault();
+            this.keys.s = true;
+            haptic(12);
+          };
+          const stopBrake = (e) => {
+            if (e) e.preventDefault();
+            this.keys.s = false;
+          };
+          btnBrake.addEventListener('touchstart', startBrake, { passive: false });
+          btnBrake.addEventListener('touchend', stopBrake);
+          btnBrake.addEventListener('touchcancel', stopBrake);
+          btnBrake.addEventListener('mousedown', startBrake);
+          btnBrake.addEventListener('mouseup', stopBrake);
+        }
+
+        const btnLand = document.getElementById('btn-m-land');
+        if (btnLand) {
+          const doLand = (e) => {
+            if (e) e.preventDefault();
+            if (this.activeVehicle && this.activeVehicle.type === 'helicopter') {
+              this.activeVehicle.isAutoLanding = !this.activeVehicle.isAutoLanding;
+              haptic([15, 25, 15]);
+              this.showRadioPopup(this.activeVehicle.isAutoLanding ? 'AUTOLANDING ENGAGED' : 'MANUAL FLIGHT RESTORED');
+            }
+          };
+          btnLand.addEventListener('touchstart', doLand, { passive: false });
+          btnLand.addEventListener('click', doLand);
+        }
+
+        const btnFullscreen = document.getElementById('btn-m-fullscreen');
+        if (btnFullscreen) {
+          const toggleFull = (e) => {
+            if (e) e.preventDefault();
+            haptic(8);
+            if (!document.fullscreenElement) {
+              document.documentElement.requestFullscreen?.().catch(() => {});
+              if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(() => {});
+              }
+            } else {
+              document.exitFullscreen?.().catch(() => {});
+            }
+          };
+          btnFullscreen.addEventListener('touchstart', toggleFull, { passive: false });
+          btnFullscreen.addEventListener('click', toggleFull);
+        }
+
         const btnAim = document.getElementById('btn-m-aim');
         if (btnAim) {
           const startAimOrDescend = (e) => {
             if (e) e.preventDefault();
             if (this.state !== 'PLAYING') return;
+            haptic(10);
             if (this.playerMode === 'IN_VEHICLE' && this.activeVehicle && this.activeVehicle.type === 'helicopter') {
               this.keys.shift = true;
+              this.keys.ctrl = true;
               btnAim.classList.add('active');
               return;
             }
@@ -4003,6 +4228,7 @@
           const stopAimOrDescend = (e) => {
             if (this.playerMode === 'IN_VEHICLE' && this.activeVehicle && this.activeVehicle.type === 'helicopter') {
               this.keys.shift = false;
+              this.keys.ctrl = false;
               btnAim.classList.remove('active');
             }
           };
@@ -4017,6 +4243,7 @@
           const doEnter = (e) => {
             if (e) e.preventDefault();
             if (this.state !== 'PLAYING') return;
+            haptic(14);
             this.toggleVehicleEnterExit();
           };
           btnEnter.addEventListener('touchstart', doEnter, { passive: false });
@@ -4028,6 +4255,7 @@
           const startJump = (e) => {
             if (e) e.preventDefault();
             this.keys.space = true;
+            haptic(10);
           };
           const stopJump = (e) => {
             if (e) e.preventDefault();
@@ -4044,6 +4272,7 @@
         if (btnWpn) {
           const cycleWpn = (e) => {
             if (e) e.preventDefault();
+            haptic(10);
             this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
           };
           btnWpn.addEventListener('touchstart', cycleWpn, { passive: false });
@@ -4056,6 +4285,7 @@
           wpnCard.style.cursor = 'pointer';
           const cycleWpnCard = (e) => {
             if (e && e.type === 'touchstart') e.preventDefault();
+            haptic(10);
             this.switchWeapon((this.weaponIndex + 1) % this.weapons.length);
           };
           wpnCard.addEventListener('click', cycleWpnCard);
@@ -4066,6 +4296,7 @@
         if (btnRadio) {
           const cycleRad = (e) => {
             if (e) e.preventDefault();
+            haptic(8);
             if (this.playerMode === 'IN_VEHICLE') {
               const name = audio.cycleRadio();
               this.showRadioPopup(name);
@@ -4082,37 +4313,87 @@
         const enterLabel = document.getElementById('m-enter-label');
         const jumpIcon = document.getElementById('m-jump-icon');
         const jumpLabel = document.getElementById('m-jump-label');
+        const fireIcon = document.getElementById('m-fire-icon');
+        const fireLabel = document.getElementById('m-fire-label');
+        const btnFire = document.getElementById('btn-m-fire');
+        const btnBrake = document.getElementById('btn-m-brake');
+        const btnLand = document.getElementById('btn-m-land');
         const btnRadio = document.getElementById('btn-m-radio');
         const btnAim = document.getElementById('btn-m-aim');
+        const btnWpn = document.getElementById('btn-m-weapon');
 
         if (isCar) {
           const isBike = this.activeVehicle && this.activeVehicle.type === 'motorcycle';
           const isHeli = this.activeVehicle && this.activeVehicle.type === 'helicopter';
 
-          if (enterIcon) enterIcon.innerText = isHeli ? '🚁' : '🚪';
-          if (enterLabel) enterLabel.innerText = isHeli ? 'EXIT HELI' : (isBike ? 'DISMOUNT' : 'EXIT');
-          if (jumpIcon) jumpIcon.innerText = isHeli ? '⬆️' : '🛑';
-          if (jumpLabel) jumpLabel.innerText = isHeli ? 'CLIMB' : 'BRAKE';
-          if (btnRadio) btnRadio.style.display = isHeli ? 'none' : 'flex';
+          if (isHeli) {
+            // HELICOPTER MODE: Flight collective & auto-land
+            if (btnAim) btnAim.style.display = 'flex';
+            if (btnAim) {
+              const aIcon = btnAim.querySelector('.m-btn-icon');
+              const aLabel = btnAim.querySelector('.m-btn-label');
+              if (aIcon) aIcon.innerText = '⬇️';
+              if (aLabel) aLabel.innerText = 'LOWER';
+            }
+            if (btnJump) {
+              jumpIcon.innerText = '⬆️';
+              jumpLabel.innerText = 'CLIMB';
+            }
+            if (btnFire) {
+              btnFire.classList.remove('m-btn-gas');
+              if (fireIcon) fireIcon.innerText = '🚀';
+              if (fireLabel) fireLabel.innerText = 'FORWARD';
+            }
+            if (btnBrake) btnBrake.style.display = 'none';
+            if (btnLand) btnLand.style.display = 'flex';
+            if (btnRadio) btnRadio.style.display = 'none';
+            if (btnWpn) btnWpn.style.display = 'none';
+            if (enterIcon) enterIcon.innerText = '🚁';
+            if (enterLabel) enterLabel.innerText = 'EXIT';
+          } else {
+            // CAR / MOTORCYCLE MODE: Authentic Gas & Brake pedals
+            if (btnAim) btnAim.style.display = 'none';
+            if (btnLand) btnLand.style.display = 'none';
+            if (btnWpn) btnWpn.style.display = 'none';
+            if (btnRadio) btnRadio.style.display = 'flex';
+            if (btnBrake) btnBrake.style.display = 'flex';
 
-          if (isHeli && btnAim) {
-            const aIcon = btnAim.querySelector('.m-btn-icon');
-            const aLabel = btnAim.querySelector('.m-btn-label');
-            if (aIcon) aIcon.innerText = '⬇️';
-            if (aLabel) aLabel.innerText = 'DESCEND';
+            if (btnFire) {
+              btnFire.classList.add('m-btn-gas');
+              if (fireIcon) fireIcon.innerText = '⚡';
+              if (fireLabel) fireLabel.innerText = 'GAS';
+            }
+            if (btnJump) {
+              jumpIcon.innerText = '🛑';
+              jumpLabel.innerText = isBike ? 'REAR BRK' : 'DRIFT';
+            }
+            if (enterIcon) enterIcon.innerText = isBike ? '🏍️' : '🚗';
+            if (enterLabel) enterLabel.innerText = isBike ? 'DISMOUNT' : 'EXIT';
           }
         } else {
-          if (enterIcon) enterIcon.innerText = '🚗';
-          if (enterLabel) enterLabel.innerText = 'ENTER';
-          if (jumpIcon) jumpIcon.innerText = '🦘';
-          if (jumpLabel) jumpLabel.innerText = 'JUMP';
-          if (btnRadio) btnRadio.style.display = 'none';
+          // ON FOOT MODE
+          if (btnAim) btnAim.style.display = 'flex';
           if (btnAim) {
             const aIcon = btnAim.querySelector('.m-btn-icon');
             const aLabel = btnAim.querySelector('.m-btn-label');
             if (aIcon) aIcon.innerText = '🎯';
             if (aLabel) aLabel.innerText = 'AIM';
           }
+          if (btnFire) {
+            btnFire.classList.remove('m-btn-gas');
+            if (fireIcon) fireIcon.innerText = '💥';
+            if (fireLabel) fireLabel.innerText = 'FIRE';
+          }
+          if (btnJump) {
+            jumpIcon.innerText = '🦘';
+            jumpLabel.innerText = 'JUMP';
+          }
+          if (btnBrake) btnBrake.style.display = 'none';
+          if (btnLand) btnLand.style.display = 'none';
+          if (btnRadio) btnRadio.style.display = 'none';
+          if (btnWpn) btnWpn.style.display = 'flex';
+          if (enterIcon) enterIcon.innerText = '🚗';
+          if (enterLabel) enterLabel.innerText = 'ENTER';
         }
       }
 
@@ -4284,6 +4565,7 @@
           // Replace placeholder body meshes with high-poly rigged model
           this.disposeChildren(this.player.mesh);
           this.player.mesh.add(soldier);
+          this.player.mesh.add(EntityBuilder.createContactShadowMesh(1.15));
 
           // Setup Player Animations (Idle, Walk, Run)
           if (gltf.animations && gltf.animations.length > 0) {
@@ -4705,6 +4987,7 @@
         // Cleanly replace old/placeholder meshes
         this.disposeChildren(ped.mesh);
         ped.mesh.add(pedModel);
+        ped.mesh.add(EntityBuilder.createContactShadowMesh(0.95));
 
         // Setup fluid motion-capture walking animation
         ped.mixer = new THREE.AnimationMixer(pedModel);
@@ -5414,7 +5697,24 @@
       }
 
       updatePedestrians(delta) {
+        const isPlayerInVehicle = Boolean(this.playerMode === 'IN_VEHICLE' && this.activeVehicle && !this.activeVehicle.isWreck && this.activeVehicle.mesh);
+        const playerPos = (isPlayerInVehicle && this.activeVehicle) ? this.activeVehicle.mesh.position : (this.player ? this.player.mesh.position : null);
+
         this.pedestrians.forEach(ped => {
+          if (!ped || !ped.mesh) return;
+
+          // Dynamic Proximity Shadow Culling (Culls distant pedestrian shadow passes to preserve locked 60 FPS)
+          if (playerPos) {
+            const distSq = (ped.mesh.position.x - playerPos.x) ** 2 + (ped.mesh.position.z - playerPos.z) ** 2;
+            const shouldCast = distSq < 1024; // 32 meters
+            if (ped.isCastingShadow !== shouldCast) {
+              ped.isCastingShadow = shouldCast;
+              ped.mesh.traverse(c => {
+                if (c.isMesh && !c.isContactShadow) c.castShadow = shouldCast;
+              });
+            }
+          }
+
           if (ped.isDead) {
             // Realistic asphalt friction stop (Zero flying, zero tumbling, grounded on road)
             const groundY = this.getGroundHeight(ped.mesh.position.x, ped.mesh.position.z);
@@ -5951,6 +6251,10 @@
           this.camera.position.copy(this.player.mesh.position).add(camOffset);
           this.camera.lookAt(this.player.mesh.position.clone().add(new THREE.Vector3(0, 1.4, 0)));
 
+          // Smoothly reset camera FOV when on foot
+          this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 65, delta * 4.0);
+          this.camera.updateProjectionMatrix();
+
         } else if (this.playerMode === 'IN_VEHICLE' && this.activeVehicle) {
           const v = this.activeVehicle;
           const isHeli = (v.type === 'helicopter');
@@ -6099,6 +6403,12 @@
             this.camera.position.lerp(v.mesh.position.clone().add(heliBack), delta * 7.0);
             const lookTarget = v.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)).addScaledVector(heliFwd, 6.0);
             this.camera.lookAt(lookTarget);
+
+            // Dynamic Flight Speed FOV
+            const heliSpeed = Math.hypot(v.velocity.x, v.velocity.z);
+            const targetHeliFov = 65 + Math.min(1.0, heliSpeed / 40) * 10;
+            this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetHeliFov, delta * 3.0);
+            this.camera.updateProjectionMatrix();
 
           } else {
             // Vehicle Driving Physics (Cars & Motorcycles)
@@ -6250,6 +6560,12 @@
             this.camera.position.lerp(v.mesh.position.clone().add(carBack), delta * (isBike ? 9.5 : 8.5));
             const lookTarget = v.mesh.position.clone().add(new THREE.Vector3(0, isBike ? 1.1 : 1.2, 0)).addScaledVector(carFwd, 3.2);
             this.camera.lookAt(lookTarget);
+
+            // Dynamic High-Speed FOV Warp (Gives exhilarating sensation of speed)
+            const speedRatio = Math.min(1.0, Math.abs(v.speed) / (maxSpeed || 45));
+            const targetFov = 65 + speedRatio * 13;
+            this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, delta * 3.5);
+            this.camera.updateProjectionMatrix();
           }
         }
       }
@@ -6519,6 +6835,8 @@
           walkAction.play();
         }
 
+        officerMesh.add(EntityBuilder.createContactShadowMesh(1.05));
+
         return {
           mesh: officerMesh,
           mixer: mixer,
@@ -6664,6 +6982,16 @@
           }
 
           if (off.mixer) off.mixer.update(delta);
+
+          // Dynamic Proximity Shadow Culling (Culls distant police shadow passes to preserve locked 60 FPS)
+          const distSq = (off.mesh.position.x - playerPos.x) ** 2 + (off.mesh.position.z - playerPos.z) ** 2;
+          const shouldCast = distSq < 1225; // 35 meters
+          if (off.isCastingShadow !== shouldCast) {
+            off.isCastingShadow = shouldCast;
+            off.mesh.traverse(c => {
+              if (c.isMesh && !c.isContactShadow) c.castShadow = shouldCast;
+            });
+          }
 
           const toPlayer = playerPos.clone().sub(off.mesh.position);
           toPlayer.y = 0;
@@ -7378,7 +7706,25 @@
         this.updateProjectiles(delta);
         this.drawRadar();
 
-        // Screen shake decay and camera trauma jitter
+        // 1. Dynamic Sun Shadow Tracking (Follows player anywhere across the city for razor-sharp shadows)
+        if (this.sun && this.sunTarget && this.player && this.player.mesh) {
+          const targetPos = (this.playerMode === 'IN_VEHICLE' && this.activeVehicle && this.activeVehicle.mesh)
+            ? this.activeVehicle.mesh.position
+            : this.player.mesh.position;
+          this.sun.position.set(targetPos.x + 90, targetPos.y + 170, targetPos.z + 65);
+          this.sunTarget.position.copy(targetPos);
+        }
+
+        // 2. Mobile Camera Flick Inertia & Momentum Damping
+        if (Math.abs(this.touchLookVelX) > 0.02 || Math.abs(this.touchLookVelY) > 0.02) {
+          this.mouseYaw -= this.touchLookVelX * 0.0035;
+          this.mousePitch -= this.touchLookVelY * 0.0028;
+          this.mousePitch = Math.max(-0.6, Math.min(0.8, this.mousePitch));
+          this.touchLookVelX *= 0.91;
+          this.touchLookVelY *= 0.91;
+        }
+
+        // 3. Screen shake decay and camera trauma jitter
         if (this.cameraShake && this.cameraShake > 0.005) {
           this.camera.position.x += (Math.random() - 0.5) * this.cameraShake;
           this.camera.position.y += (Math.random() - 0.5) * this.cameraShake;
