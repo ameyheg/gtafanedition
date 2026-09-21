@@ -3616,7 +3616,7 @@
         });
       }
 
-      getGroundHeight(x, z, currentY = null) {
+      getGroundHeight(x, z, currentY = null, isHelicopter = false) {
         let groundY = 0.0;
         const blockSize = 90;
         const streetWidth = 24;
@@ -3637,6 +3637,10 @@
 
         // Rooftop Surface Detection (Permits landing & walking on building roofs)
         if (currentY !== null && currentY > 4.0 && this.city && this.city.buildings) {
+          // Generous margin for 10-ton helicopter landing skids vs strict zero-margin for on-foot player feet
+          const margin = isHelicopter ? 1.4 : 0.0;
+          const verticalSnapTolerance = isHelicopter ? 4.5 : 0.7;
+
           for (let i = 0; i < this.city.buildings.length; i++) {
             const b = this.city.buildings[i];
             if (!b.roofY) continue;
@@ -3649,15 +3653,17 @@
             if (b.roofRadius) {
               const roofX = (b.minX + b.maxX) / 2;
               const roofZ = (b.minZ + b.maxZ) / 2;
-              if (Math.hypot(x - roofX, z - roofZ) > b.roofRadius + 1.2) continue;
+              if (Math.hypot(x - roofX, z - roofZ) > (b.roofRadius + margin)) continue;
+            } else {
+              if (x < (rMinX - margin) || x > (rMaxX + margin) || z < (rMinZ - margin) || z > (rMaxZ + margin)) {
+                continue;
+              }
             }
 
-            // Margin allows solid landing even near roof boundaries
-            if (x >= (rMinX - 1.2) && x <= (rMaxX + 1.2) && z >= (rMinZ - 1.2) && z <= (rMaxZ + 1.2)) {
-              if (currentY >= (b.roofY - 4.5)) {
-                if (b.roofY > groundY) {
-                  groundY = b.roofY;
-                }
+            // Only recognize roof surface if player/heli is at or above the roof (not already falling down the facade)
+            if (currentY >= (b.roofY - verticalSnapTolerance)) {
+              if (b.roofY > groundY) {
+                groundY = b.roofY;
               }
             }
           }
@@ -6138,7 +6144,9 @@
             .normalize();
 
           if (moveVec.lengthSq() > 0) {
-            this.player.mesh.position.addScaledVector(moveVec, moveSpeed * delta);
+            // Limited air drift control when falling from a skyscraper (cannot hover back onto roof)
+            const airControl = this.player.isFallingFromHeight ? 0.25 : 1.0;
+            this.player.mesh.position.addScaledVector(moveVec, moveSpeed * airControl * delta);
             if (this.isAiming) {
               this.player.mesh.rotation.y = this.mouseYaw;
             } else {
@@ -6183,28 +6191,66 @@
             this.player.mixer.update(delta);
           }
 
-          // Jumping physics on foot
+          // Jumping & Rooftop Freefall physics on foot
           if (this.keys.space && !this.player.isJumping) {
             this.player.isJumping = true;
             this.player.jumpVel = 7.0;
+            this.player.fallStartY = this.player.mesh.position.y;
           }
+
           if (this.player.isJumping) {
             this.player.mesh.position.y += this.player.jumpVel * delta;
-            this.player.jumpVel -= 22 * delta;
-            const groundY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z, this.player.mesh.position.y);
+            // Realistic gravitational acceleration
+            const gravity = this.player.isFallingFromHeight ? 34.0 : 22.0;
+            this.player.jumpVel = Math.max(-65.0, this.player.jumpVel - gravity * delta);
+
+            // While plummeting from a skyscraper, tilt character forward in freefall
+            if (this.player.isFallingFromHeight) {
+              this.player.mesh.rotation.x = THREE.MathUtils.lerp(this.player.mesh.rotation.x, 0.5, delta * 6);
+            }
+
+            const groundY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z, this.player.mesh.position.y, false);
             if (this.player.mesh.position.y <= groundY) {
               this.player.mesh.position.y = groundY;
               this.player.isJumping = false;
+
+              // Calculate total fall height and impact velocity
+              const fallHeight = Math.max(0, (this.player.fallStartY || groundY) - groundY);
+              const impactSpeed = Math.abs(this.player.jumpVel);
+              const wasHighFall = Boolean(this.player.isFallingFromHeight);
+
               this.player.jumpVel = 0;
+              this.player.isFallingFromHeight = false;
+              this.player.fallStartY = null;
+
+              if (wasHighFall || fallHeight > 8.5 || impactSpeed > 20.0) {
+                // FATAL ROOFTOP FALL -> INSTANT DEATH & WASTED
+                this.player.mesh.rotation.x = Math.PI / 2; // Collapse flat on the road
+                this.playerHealth = 0;
+                document.getElementById('health-bar').style.width = '0%';
+                this.spawnBloodEffect(this.player.mesh.position);
+                this.cameraShake = 0.95;
+                audio.playWastedSound?.();
+                this.triggerWasted();
+                return;
+              } else if (fallHeight > 3.6) {
+                // Moderate jump drop damage
+                const dmg = Math.floor((fallHeight - 3.2) * 14);
+                this.takeDamage(dmg);
+              }
             }
           } else {
-            // Step up / down dynamically between road, pavement, and rooftops
-            const targetY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z, this.player.mesh.position.y);
-            this.player.mesh.position.y = THREE.MathUtils.lerp(this.player.mesh.position.y, targetY, delta * 20);
+            // Check if player walked off a building roof or terrace edge into empty air
+            const targetY = this.getGroundHeight(this.player.mesh.position.x, this.player.mesh.position.z, this.player.mesh.position.y, false);
             if (this.player.mesh.position.y > (targetY + 1.2)) {
-              // Stepped off rooftop edge into empty air -> fall with gravity!
+              // Stepped off rooftop edge into empty air -> PLUNGE INTO FATAL FREEFALL!
               this.player.isJumping = true;
-              this.player.jumpVel = -2.0;
+              this.player.isFallingFromHeight = true;
+              this.player.fallStartY = this.player.mesh.position.y;
+              this.player.jumpVel = -3.5; // Immediate downward plunge
+            } else {
+              // Gentle step up/down between road and sidewalk curb (<= 1.2m)
+              this.player.mesh.position.y = THREE.MathUtils.lerp(this.player.mesh.position.y, targetY, delta * 20);
             }
           }
 
@@ -6266,7 +6312,7 @@
           if (isHeli) {
             // === HELICOPTER FLIGHT AERODYNAMICS & BUILDING COLLISION ===
             // 1. Current surface elevation (ground/street 0.0 or building rooftop!)
-            const minGround = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z, v.mesh.position.y);
+            const minGround = this.getGroundHeight(v.mesh.position.x, v.mesh.position.z, v.mesh.position.y, true);
 
             // Collective Altitude & Landing Controls:
             // - SPACE: Climb / Ascend
@@ -7508,6 +7554,11 @@
             document.getElementById('prompt-box').style.display = 'none';
           }
           this.updateMobileUI();
+          this.player.mesh.rotation.x = 0;
+          this.player.isJumping = false;
+          this.player.jumpVel = 0;
+          this.player.isFallingFromHeight = false;
+          this.player.fallStartY = null;
           this.player.mesh.position.set(0, 0, 15);
           document.getElementById('health-bar').style.width = '100%';
           document.getElementById('armor-bar').style.width = '100%';
