@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>GRAND THEFT AUTO // LOS SANTOS 3D</title>
   <meta name="description" content="Open-world 3D GTA V Action Game in a single HTML file. Features third-person walking, running, jumping, carjacking, driving, weapons, wanted levels, police pursuits, and GTA HUD.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏎️</text></svg>">
 
   <!-- Google Fonts: Pricedown style / Montserrat / Oswald -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -4321,6 +4322,8 @@
         const btnRadio = document.getElementById('btn-m-radio');
         const btnAim = document.getElementById('btn-m-aim');
         const btnWpn = document.getElementById('btn-m-weapon');
+        const btnJump = document.getElementById('btn-m-jump');
+        const btnEnter = document.getElementById('btn-m-enter');
 
         if (isCar) {
           const isBike = this.activeVehicle && this.activeVehicle.type === 'motorcycle';
@@ -6405,7 +6408,7 @@
             this.camera.lookAt(lookTarget);
 
             // Dynamic Flight Speed FOV
-            const heliSpeed = Math.hypot(v.velocity.x, v.velocity.z);
+            const heliSpeed = Math.hypot(v.speed || 0, v.verticalSpeed || 0);
             const targetHeliFov = 65 + Math.min(1.0, heliSpeed / 40) * 10;
             this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetHeliFov, delta * 3.0);
             this.camera.updateProjectionMatrix();
